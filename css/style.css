@@ -249,8 +249,8 @@ img { display: block; }
 .mm-controls .is-hidden { display: none; }
 
 .mm-legend { position: absolute; right: 0; bottom: 0; padding: 20px; z-index: 9; }
-.mm-legend img { width: 185px; height: 269px; object-fit: cover; }
-.mm-page .mm-legend { top: 0; bottom: auto; padding: 12px 20px; }
+.mm-legend img { width: 278px; height: 404px; object-fit: cover; }   /* 1.5× (feedback 02/11) */
+.mm-page .mm-legend { top: 0; bottom: auto; padding: 20px; }
 
 /* Tab bar inside map (Web/Map/Tab Bar) */
 .mm-tabs {
@@ -373,7 +373,7 @@ img { display: block; }
   .mm-section .mm-frame { width: calc(100vw - 40px); height: 680px; }
   .mm-mode { width: 408px; }
   .mm-mode button { font-size: 16px; padding: 0 8px; }
-  .mm-legend img { width: 120px; height: auto; }
+  .mm-legend img { width: 180px; height: auto; }
   .mm-tabs button { width: 140px; font-size: 16px; }
   .mm-tabs__indicator { width: 140px; }
   .mm-proj__tag, .mm-road__pill { font-size: 12px; padding: 6px 10px; }
@@ -410,7 +410,7 @@ img { display: block; }
   .mm-page .mm-ptabs button { min-width: 64px !important; width: 64px; padding: 0; }
   .mm-page .mm-ptabs button > span:not(.svg-icon) { display: none; }
   .mm-page .mm-legend { padding: 8px; }
-  .mm-page .mm-legend img { width: 120px; height: auto; }
+  .mm-page .mm-legend img { width: 180px; height: auto; }
   .mm-page .mm-panel { width: 100%; }
   .mm-page .mm-panel__body { display: grid; grid-template-columns: 1fr 1fr; column-gap: 24px; align-items: start; padding: 8px 24px 24px; }
   .mm-page .mm-col { gap: 12px; }
@@ -426,7 +426,7 @@ img { display: block; }
 .mm-msvg { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
 .mm-spot { fill: #06080b; pointer-events: none; }
 .mm-zone-g { cursor: pointer; }
-.mm-zone-fill { fill-opacity: .16; pointer-events: all; }   /* light tint over the lit (dusk) building */
+.mm-zone-fill { fill-opacity: .6; pointer-events: all; }   /* Figma 43:7639: gold gradient at 60% over the whole building (dusk render shows through) */
 .mm-zone-line { fill: none; stroke-linejoin: round; pointer-events: none; }
 .mm-zone-trace { fill: none; stroke: #ffe7b0; stroke-width: 2.2; stroke-linejoin: round; vector-effect: non-scaling-stroke; pointer-events: none; opacity: 0; filter: drop-shadow(0 0 4px rgba(255, 214, 140, .9)); }
 .mm-road-g { pointer-events: none; }
@@ -476,7 +476,7 @@ img { display: block; }
 .mm-dof { filter: brightness(.88) saturate(.56) sepia(.06) blur(5.7px); -webkit-mask-image: linear-gradient(to bottom, #000 1.5%, transparent 56.2%); mask-image: linear-gradient(to bottom, #000 1.5%, transparent 56.2%); }
 .mm-softlight { position: absolute; left: -9.4%; top: 0; width: 111.2%; height: 100%; mix-blend-mode: soft-light; pointer-events: none;
   background-image: linear-gradient(184.73deg, rgba(0, 0, 0, .8) 7.1%, rgba(0, 0, 0, .16) 46.99%), linear-gradient(189.17deg, rgba(0, 0, 0, 0) 49.99%, rgba(0, 0, 0, .8) 87.8%); }
-.mm-topview { top: 4.5px !important; height: 1236px !important; }
+.mm-topview { top: 0 !important; height: 1236px !important; }   /* was 4.5px down (Figma offset), which left a black strip at the top edge */
 .mm-shade { position: absolute; inset: 0; background: rgba(0, 0, 0, .3); pointer-events: none; }
 .mm-plan-layer { pointer-events: none; }
 
@@ -520,3 +520,267 @@ img { display: block; }
 /* the hover road name is always the top-most label (above project tags, bridge badges and the panel-side markers) */
 .mm-mk:has(.mm-road--tag) { z-index: 30; }
 .mm-markers { isolation: isolate; }
+
+/* vector overview map (OSM) */
+.mm-ov-img.is-vector svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.mm-ov-img.is-vector .ov-labels text { paint-order: stroke; stroke: rgba(255, 255, 255, .6); stroke-width: 1.4px; stroke-linejoin: round; }
+.mm-ov-img.is-vector .ov-labels .ov-ward { stroke-width: 2px; }
+
+/* baked overview already carries the sepia grade */
+.mm-ov-img.is-baked::before, .mm-ov-img.is-baked::after { display: none; }
+.mm-ov-img.is-baked img { image-rendering: auto; }
+
+/* road / outline lights: one canvas per map, drawn in screen space (above the map, below clouds & labels) */
+.mm-lightcv { position: absolute; left: 0; top: 0; z-index: 1; pointer-events: none; }
+
+/* ---------- overview labels: placed live in screen space by app.js (ovlLayout) ----------
+   constant on-screen size; colours are set for the sepia-graded map. --halo = map paper colour */
+.mm-ovl { position: absolute; inset: 0; z-index: 2; pointer-events: none; overflow: hidden; transition: opacity .45s ease; }
+.mm-ovl.is-dim { opacity: .3; }
+.mm-ovl__t {
+  --halo: #ddd8cc;
+  position: absolute; left: 0; top: 0; transform-origin: 0 0; white-space: nowrap; text-align: center; line-height: 1.14;
+  font-family: var(--font-body); font-size: 9px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: #4a3f34;
+  text-shadow: 0 0 1px var(--halo), 0 0 2px var(--halo), 0 0 3px var(--halo);
+  opacity: 0; transition: opacity .35s ease; -webkit-font-smoothing: antialiased;
+}
+.mm-ovl__t.is-on { opacity: 1; will-change: transform; }
+.mm-ovl__t[data-al="l"] { text-align: left; }
+.mm-ovl__t[data-al="r"] { text-align: right; }
+.mm-ovl--ward small { display: block; font-size: 7px; letter-spacing: .3em; color: #95856f; margin-bottom: 2px; }
+.mm-ovl--ward b { display: block; font-size: 11.5px; font-weight: 700; letter-spacing: .08em; color: #3b3027; }
+.mm-ovl--hub { font-size: 12px; font-weight: 700; letter-spacing: .07em; color: #2d2824; }
+.mm-ovl--air { font-size: 8.5px; font-weight: 700; letter-spacing: .1em; color: #3b3128; }
+.mm-ovl--poi { font-size: 8.5px; letter-spacing: .12em; color: #84653a; }
+.mm-ovl--junc { font-size: 8px; letter-spacing: .14em; color: #3b3128; }
+.mm-ovl--bridge { font-size: 8px; letter-spacing: .14em; color: #66594a; }
+.mm-ovl--bridge i { display: block; font-size: 7px; font-style: italic; letter-spacing: .06em; text-transform: none; color: #9a8b74; }
+.mm-ovl--road { font-size: 8px; letter-spacing: .16em; color: #6f6757; }
+.mm-ovl--art { font-size: 9px; font-weight: 700; letter-spacing: .15em; color: #5b391f; }
+.mm-ovl--line { font-size: 8.5px; font-weight: 700; letter-spacing: .16em; color: #3b2f25; }
+.mm-ovl--line.mm-ovl--m2 { color: #2f5a39; }
+.mm-ovl--line.mm-ovl--rail { font-size: 7.5px; font-weight: 500; color: #9b6129; }
+.mm-ovl--area { font-size: 8.5px; letter-spacing: .16em; text-shadow: none; }
+.mm-ovl--area.mm-ovl--gold { font-weight: 700; color: #4a351d; }
+.mm-ovl--area.mm-ovl--green { color: #4c5745; }
+.mm-ovl--water { text-shadow: none; }
+.mm-ovl--water span { position: absolute; left: 0; top: 0; transform-origin: 0 0; font-size: 10px; letter-spacing: 0; padding: 0 .17em; color: #8d8a80; font-weight: 500; }
+.mm-ovl-attrib { position: absolute; right: 10px; bottom: 7px; z-index: 2; font-size: 9px; letter-spacing: .02em; color: rgba(59, 48, 39, .55); pointer-events: auto; }
+.mm-ovl-attrib a { color: inherit; text-decoration: none; }
+.mm-ovl-attrib a:hover { text-decoration: underline; }
+
+/* while the clouds cover the frame (load and map changes): only clouds + the spinning logo.
+   filter: opacity() multiplies with whatever opacity GSAP gives each element, so nothing fights its own tweens */
+.mm-markers, .mm-controls, .mm-legend, .mm-tabs, .mm-ptabs, .mm-edge, .mm-ovl, .mm-ovl-attrib { transition-property: filter, opacity; transition-duration: .35s; }
+.mm-frame.is-clouded :is(.mm-markers, .mm-controls, .mm-legend, .mm-tabs, .mm-ptabs, .mm-edge, .mm-ovl, .mm-ovl-attrib) { filter: opacity(0); pointer-events: none !important; }
+.mm-frame.is-clouded :is(.mm-markers, .mm-controls, .mm-tabs, .mm-ptabs) * { pointer-events: none !important; }
+
+/* embed (section): the same single 3-tab bar as the full page, inside the map at the bottom centre;
+   it slides left to stay centred on the visible map when the panel is open */
+.mm-ptabs--embed { position: absolute; left: 50%; bottom: 20px; z-index: 10; transform: translateX(-50%);
+  transition: left .55s var(--ease-out), filter .35s, opacity .35s; }
+.mm-section.panel-open .mm-ptabs--embed { left: calc((100% - var(--panel-w)) / 2); }
+@media (max-width: 767px) {
+  .mm-section.panel-open .mm-ptabs--embed { left: 50%; }
+  .mm-ptabs--embed { bottom: 12px; border-width: 3px; }
+  .mm-ptabs.mm-ptabs--embed button { height: 44px; padding: 0 10px; font-size: 14px; }
+  .mm-ptabs.mm-ptabs--embed button > span:not(.svg-icon) { display: inline; }
+}
+/* embed (section): legend a little smaller than the full page (1.25× the original instead of 1.5×) */
+.mm-section .mm-legend img { width: 232px; height: 337px; }
+@media (max-width: 767px) { .mm-section .mm-legend img { width: 150px; height: auto; } }
+/* while a project / amenity popover is open, the bridge nodes step aside (they come back when it closes) */
+.panel-open .mm-edge { opacity: 0 !important; }
+.panel-open .mm-edge, .panel-open .mm-edge * { pointer-events: none !important; }
+/* legend: top-right corner, same 20px margin as the controls column on the left (feedback 02/11) */
+.mm-section .mm-legend { top: 0; bottom: auto; padding: 20px; }
+
+/* image viewer: thumbnails in the popover open the photo full-screen (‹ › keys, swipe, Esc, click outside to close) */
+.mm-viewer { position: fixed; inset: 0; z-index: 200; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 12px;
+  padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  background: rgba(20, 16, 11, .92); color: #fffef2; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.mm-viewer__top { display: flex; align-items: center; gap: 16px; padding: 0 4px; }
+.mm-viewer__title { font-family: var(--font-display); font-size: 22px; }
+.mm-viewer__count { font-size: 14px; letter-spacing: .08em; opacity: .7; font-variant-numeric: tabular-nums; }
+.mm-viewer__close { margin-left: auto; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; color: #fffef2; border-radius: 50%; transition: background .2s; }
+.mm-viewer__close:hover { background: rgba(255, 254, 242, .12); }
+.mm-viewer__close svg path { stroke: currentColor; }
+.mm-viewer__stage { min-height: 0; display: flex; align-items: center; justify-content: center; }
+.mm-viewer__stage img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 4px; box-shadow: 0 20px 60px rgba(0, 0, 0, .45); }
+.mm-viewer__nav { position: absolute; top: 50%; width: 52px; height: 52px; margin-top: -26px; display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; background: rgba(255, 254, 242, .14); color: #fffef2; transition: background .2s; }
+.mm-viewer__nav:hover { background: rgba(255, 254, 242, .26); }
+.mm-viewer__nav svg { width: 22px; height: 22px; }
+.mm-viewer__nav svg path { stroke: currentColor; }
+.mm-viewer__nav.prev { left: max(16px, env(safe-area-inset-left, 0px)); }
+.mm-viewer__nav.prev .svg-icon { transform: rotate(-90deg); }
+.mm-viewer__nav.next { right: max(16px, env(safe-area-inset-right, 0px)); }
+.mm-viewer__nav.next .svg-icon { transform: rotate(90deg); }
+.mm-viewer__strip { display: flex; gap: 8px; justify-content: safe center; overflow-x: auto; scrollbar-width: none; padding: 2px; }
+.mm-viewer__strip::-webkit-scrollbar { display: none; }
+.mm-viewer__strip button { flex: 0 0 auto; width: 96px; aspect-ratio: 16 / 9; border-radius: 3px; overflow: hidden; opacity: .5; transition: opacity .2s; outline-offset: 2px; }
+.mm-viewer__strip button:hover, .mm-viewer__strip button.is-current { opacity: 1; }
+.mm-viewer__strip button.is-current { box-shadow: 0 0 0 2px var(--brand); }
+.mm-viewer__strip img { width: 100%; height: 100%; object-fit: cover; }
+.mm-viewer.is-single .mm-viewer__nav, .mm-viewer.is-single .mm-viewer__strip { display: none; }
+.mm-viewer button:focus-visible { outline: 2px solid var(--brand); }
+.mm-gal__track button { cursor: zoom-in; }
+@media (max-width: 767px) { .mm-viewer__nav { display: none; } .mm-viewer__strip button { width: 72px; } .mm-viewer__title { font-size: 18px; } }
+/* hovering a building: the other project flags turn grey (same grey as the selected state) so the hovered one stands out */
+.mm-markers.is-focusing .mm-proj:not(.is-hover):not(.is-selected) { --c: 117, 117, 117; }
+
+/* toast (e.g. "Tính năng đang được phát triển" on a detail link with no page yet) */
+.mm-toast { position: fixed; left: 50%; top: calc(24px + env(safe-area-inset-top, 0px)); z-index: 300; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px; padding: 12px 20px; border-radius: 6px; max-width: calc(100vw - 32px);
+  background: rgba(46, 38, 32, .94); color: #fffef2; font-size: 15px; line-height: 1.35; box-shadow: 0 10px 30px rgba(0, 0, 0, .25);
+  visibility: hidden; opacity: 0; pointer-events: none; }
+.mm-toast svg { flex: none; color: var(--brand); }
+.mm-page a.mm-header__logo { display: block; transition: transform .3s var(--ease-out), opacity .3s; }
+.mm-page a.mm-header__logo:hover { transform: scale(1.04); }
+.mm-pin:focus-visible .mm-pin__tip { opacity: 1; transform: translate(-50%, 0); }
+.mm-pin__tip::after { content: ''; position: absolute; left: 50%; top: 100%; margin-left: -5px; border: 5px solid transparent; border-top-color: rgba(40, 32, 20, .82); }
+/* amenity tooltip: solid Sala gold */
+.mm-pin__tip { background: var(--brand); color: #fffef2; box-shadow: 0 4px 12px rgba(0, 0, 0, .22); }
+.mm-pin__tip::after { border-top-color: var(--brand); }
+/* page: bottom fade for logo contrast — above the map image, under the labels, clouds and UI */
+.mm-bottomfade { position: absolute; left: 0; right: 0; bottom: 0; height: min(38%, 300px); z-index: 2; pointer-events: none;
+  background: linear-gradient(to top, rgba(0, 0, 0, .3), rgba(0, 0, 0, 0)); }
+/* while the clouds cover the frame: a white cloud bed (soft at the edges) so the spinning logo always reads */
+.mm-clouds__veil { position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse at 50% 50%, #fffffb 0%, #fbfbf6 55%, #f1f1ec 100%); }
+/* controls: slimmer column — each group 44px wide (border 4 + 36px buttons), same for every group so the column stays aligned */
+.mm-ctrl { padding: 0; }
+.mm-ctrl button { width: 36px; height: 36px; }
+.mm-ctrl button .svg-icon, .mm-ctrl button > svg { width: 18px; height: 18px; display: flex; }
+.mm-ctrl button svg { width: 18px; height: 18px; }
+.mm-controls { gap: 8px; }
+/* switch bar balanced with the 44px control column: 44px tabs, 16px text, 18px icons, 20px from the bottom */
+.mm-ptabs button { height: 44px; padding: 0 24px; font-size: 16px; }
+.mm-ptabs button:first-of-type { min-width: 148px; }
+.mm-ptabs button:not(:first-of-type) { min-width: 136px; }
+.mm-ptabs button .svg-icon, .mm-ptabs button .svg-icon svg { width: 18px; height: 18px; }
+.mm-page .mm-header { padding-bottom: 20px; }
+@media (max-width: 767px) {
+  .mm-ptabs.mm-ptabs--embed button { height: 40px; padding: 0 10px; font-size: 14px; min-width: 0; }
+}
+@media (max-height: 500px) and (orientation: landscape) {
+  .mm-page .mm-ptabs button { height: 44px; width: 56px; min-width: 56px !important; }
+  .mm-page .mm-header { padding-bottom: 8px; }
+}
+/* one 12px margin around the map chrome: controls, legend, switch bar, logo (was 20px) */
+.mm-controls { padding: 12px; }
+.mm-section .mm-legend, .mm-page .mm-legend { padding: 12px; }
+.mm-ptabs--embed { bottom: 12px; }
+.mm-page .mm-header { padding: 12px; }
+@media (max-height: 500px) and (orientation: landscape) {
+  .mm-page .mm-controls, .mm-page .mm-legend, .mm-page .mm-header { padding: 8px; }
+}
+/* Sala pin a little smaller (0.75×; the click area shrinks with it, the tip stays on the same spot) */
+.mm-sala-pin { transform: scale(.75); }
+/* switch bar: thinner border and concentric corners — outer radius 10 = indicator 4 + padding 4 + border 2 */
+.mm-ptabs { border-width: 2px; border-radius: 10px; }
+.mm-ptabs__indicator { border-radius: 4px; }
+.mm-ptabs button { border-radius: 4px; }
+@media (max-width: 767px) { .mm-ptabs--embed { border-width: 2px; } }
+/* controls match the switch: 2px border, 4px inset, 4px inner corners → 10px outer radius; still 44px wide (2+4+32+4+2) */
+.mm-ctrl { border-width: 2px; border-radius: 10px; padding: 4px; }
+.mm-ctrl button { width: 32px; height: 32px; border-radius: 4px; }
+/* legend: same 10px corner as the switch and controls */
+.mm-legend img { border-radius: 10px; display: block; }
+/* standard corner radius: 4px on every chrome box (switch, controls, legend); inner pieces 2px */
+.mm-ptabs, .mm-ctrl, .mm-legend img { border-radius: 4px; }
+.mm-ptabs__indicator, .mm-ptabs button, .mm-ctrl button { border-radius: 2px; }
+/* tool tooltips: solid Sala gold, to the right of the button */
+.mm-ctrl { overflow: visible; }
+.mm-ctrl button[data-tip] { position: relative; }
+.mm-ctrl button[data-tip]::after { content: attr(data-tip); position: absolute; left: calc(100% + 12px); top: 50%; transform: translate(-4px, -50%);
+  padding: 6px 10px; border-radius: 4px; background: var(--brand); color: #fffef2; font-size: 12px; line-height: 1.2; white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .22); opacity: 0; pointer-events: none; transition: opacity .2s ease, transform .2s ease; z-index: 20; }
+.mm-ctrl button[data-tip]::before { content: ''; position: absolute; left: calc(100% + 2px); top: 50%; margin-top: -5px; border: 5px solid transparent; border-right-color: var(--brand);
+  opacity: 0; pointer-events: none; transition: opacity .2s ease; z-index: 20; }
+.mm-ctrl button[data-tip]:hover::after, .mm-ctrl button[data-tip]:focus-visible::after { opacity: 1; transform: translate(0, -50%); }
+.mm-ctrl button[data-tip]:hover::before, .mm-ctrl button[data-tip]:focus-visible::before { opacity: 1; }
+@media (hover: none) { .mm-ctrl button[data-tip]::after, .mm-ctrl button[data-tip]::before { display: none; } }
+/* HD overview map: its own (tighter) extent in map space; legend image keeps its proportions */
+.mm-ov-img.mm-ov-img--hd { left: 82.9px; top: 335.7px; width: 1304.9px; height: 1021.2px; }
+.mm-legend img, .mm-section .mm-legend img { height: auto; object-fit: contain; }
+/* amenity nodes: all Sala pink at rest; the hovered / selected one turns gold, the others go grey meanwhile */
+.mm-pin, .mm-pin--featured { border-color: var(--brand-2); color: var(--brand-2); }
+.mm-pin:hover, .mm-pin:focus-visible { border-color: var(--brand); color: var(--brand); box-shadow: 0 0 0 6px rgba(188, 142, 73, .25); }
+.mm-pin.is-active { border-color: var(--brand); color: var(--brand); box-shadow: 0 0 0 8px rgba(188, 142, 73, .22); }
+.mm-pin.is-active .mm-pin__pulse { border-color: rgba(188, 142, 73, .6); }
+.mm-pin { transition: width .35s var(--ease-out), height .35s var(--ease-out), margin .35s var(--ease-out), border-color .25s ease, color .25s ease, border-width .25s ease, box-shadow .25s ease, filter .3s ease, opacity .3s ease; }
+/* one node in focus (hover / selected): the others stay pink but step back a little */
+/* one node in focus (hover / selected): it turns gold, the other nodes go grey and the map dims a little */
+.mm-markers:has(.mm-pin:hover) .mm-pin:not(:hover):not(.is-active),
+.mm-markers:has(.mm-pin.is-active) .mm-pin:not(:hover):not(.is-active) { border-color: #9a9a9a; color: #9a9a9a; }
+.mm-am-dim { position: absolute; inset: 0; background: rgba(12, 10, 6, .32); opacity: 0; pointer-events: none; transition: opacity .35s ease; }
+.mm-layer[data-map="amenity"]:has(.mm-pin:hover) .mm-am-dim,
+.mm-layer[data-map="amenity"]:has(.mm-pin.is-active) .mm-am-dim { opacity: 1; }
+
+/* ---------- phones: portrait and landscape both usable ---------- */
+.mm-rothint { position: absolute; left: 50%; bottom: 76px; z-index: 14; transform: translateX(-50%); display: flex; align-items: center; gap: 8px;
+  max-width: calc(100% - 24px); padding: 7px 6px 7px 12px; border-radius: 4px; background: var(--brand); color: #fffef2;
+  font-size: 13px; line-height: 1.25; box-shadow: 0 6px 18px rgba(0, 0, 0, .25); white-space: nowrap; }
+.mm-rothint svg { flex: none; }
+.mm-rothint span { overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 767px) and (orientation: portrait) { .mm-page .mm-rothint { bottom: 132px; } }
+.mm-rothint button { flex: none; width: 28px; height: 28px; font-size: 20px; line-height: 1; color: inherit; border-radius: 2px; }
+.mm-rothint button:hover { background: rgba(255, 254, 242, .16); }
+.mm-frame.is-clouded .mm-rothint { visibility: hidden; }
+.mm-rotate { display: none !important; }   /* the full-screen rotate wall is retired */
+
+@media (max-width: 767px) and (orientation: portrait) {
+  /* legend: compact, so the map stays visible */
+  .mm-legend img, .mm-section .mm-legend img, .mm-page .mm-legend img { width: 112px; }
+  /* page: the same centred 3-tab bar with text as the embed; logo smaller, above the bar on the left */
+  .mm-page .mm-header { flex-direction: column; align-items: stretch; gap: 8px; padding: 12px; }
+  .mm-page .mm-header__logo { width: 44px; height: 45px; align-self: flex-start; }
+  .mm-page .mm-ptabs { align-self: center; border-width: 2px; padding: 4px; }
+  .mm-page .mm-ptabs button { width: auto; min-width: 0 !important; height: 40px; padding: 0 10px; font-size: 14px; }
+  .mm-page .mm-ptabs button > span:not(.svg-icon) { display: inline; }
+  .mm-page .mm-ptabs .mm-ptabs__indicator { top: 4px; bottom: 4px; }
+}
+@media (max-height: 500px) and (orientation: landscape) {
+  /* landscape phones: compact legend */
+  .mm-legend img, .mm-section .mm-legend img, .mm-page .mm-legend img { width: 128px; }
+}
+/* popover scrollbar: a thin gold line with no track, it widens slightly on hover (instead of the grey OS bar) */
+.mm-panel, .mm-panel * { scrollbar-width: thin; scrollbar-color: rgba(188, 142, 73, .55) transparent; }
+.mm-panel ::-webkit-scrollbar, .mm-panel::-webkit-scrollbar { width: 6px; height: 6px; }
+.mm-panel ::-webkit-scrollbar-track, .mm-panel::-webkit-scrollbar-track { background: transparent; margin: 8px 0; }
+.mm-panel ::-webkit-scrollbar-thumb, .mm-panel::-webkit-scrollbar-thumb { background: rgba(188, 142, 73, .45); border-radius: 4px; border: 2px solid transparent; background-clip: padding-box; }
+.mm-panel ::-webkit-scrollbar-thumb:hover, .mm-panel::-webkit-scrollbar-thumb:hover { background-color: rgba(188, 142, 73, .8); border-width: 1px; }
+.mm-panel ::-webkit-scrollbar-button, .mm-panel ::-webkit-scrollbar-corner { display: none; background: transparent; }
+/* page header without the logo: the 3-tab bar alone, centred */
+.mm-page .mm-header { justify-content: center; align-items: flex-end; }
+@media (max-width: 767px) and (orientation: portrait) { .mm-page .mm-rothint { bottom: 76px; } }
+/* quick map switch: labels, flags, nodes and bridge badges hide under the white clouds; tabs and tools stay */
+.mm-frame.is-swapping :is(.mm-markers, .mm-edge, .mm-ovl, .mm-legend) { filter: opacity(0); pointer-events: none !important; }
+.mm-frame.is-swapping .mm-markers * { pointer-events: none !important; }
+/* gallery strip: no scrollbar at all — moved with the ‹ › arrows (beats the thin panel scrollbar above) */
+.mm-panel .mm-gal__track { scrollbar-width: none; -ms-overflow-style: none; }
+.mm-panel .mm-gal__track::-webkit-scrollbar { display: none; width: 0; height: 0; }
+
+/* viewer: the thumbnail stands in (softly blurred) while the full image loads — feedback 02/11 */
+.mm-viewer__stage img { transition: filter .35s ease; }
+.mm-viewer__stage img.is-lowres { filter: blur(6px) saturate(.95); }
+
+/* viewer: every photo sits in the same 16:9 frame (feedback 02/11 "chung 1 size, tránh nhảy lúc to lúc nhỏ").
+   The frame is the largest 16:9 box that fits the stage, capped at 1280 px wide; the photo fills it (cover),
+   so switching photos never changes the size, whatever the source file's size or ratio. */
+.mm-viewer__stage { container-type: size; }
+.mm-viewer__stage img { width: min(100cqw, 1280px, 100cqh * 16 / 9); height: auto; aspect-ratio: 16 / 9;
+  max-width: none; max-height: none; object-fit: cover; background: #1c1a17; }
+
+/* popover skeleton: shimmer in the image frames until the picture arrives (feedback 02/11) */
+.mm-skel { position: relative; background: #ece4d2; overflow: hidden; }
+.mm-skel::before { content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background: linear-gradient(100deg, rgba(255, 254, 242, 0) 20%, rgba(255, 254, 242, .75) 50%, rgba(255, 254, 242, 0) 80%) #ece4d2;
+  background-size: 220% 100%; animation: mm-skel 1.3s ease-in-out infinite; transition: opacity .4s ease; }
+.mm-skel img { opacity: 0; transition: opacity .45s ease, transform 6s ease; }
+.mm-skel.is-loaded::before { opacity: 0; animation: none; }
+.mm-skel.is-loaded img { opacity: 1; }
+.mm-gal__track button.mm-skel img { transition: opacity .45s ease, transform .4s ease; }
+@keyframes mm-skel { from { background-position: 120% 0; } to { background-position: -120% 0; } }
+@media (prefers-reduced-motion: reduce) { .mm-skel::before { animation: none; } }

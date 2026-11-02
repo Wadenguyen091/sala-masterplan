@@ -30,18 +30,18 @@ window.SALA_DATA = {
 
   /* 3D master map: project labels. side = which side of the leader line the label sits */
   projects: [
-    { id: 'sarene-residence', name: 'Sarene residence', x: 1127, y: 442, side: 'right',
+    { id: 'sarene-residence', name: 'Sarene', x: 1127, y: 442, side: 'right',
       data: {
-        title: 'Căn hộ Sarene',
-        image: 'assets/img/project-sarene.jpg',
+        title: 'Sarene',
+        image: 'assets/img/sarene/01.webp',
         desc: 'Dự án thuộc tổ hợp căn hộ cao cấp và phố thương mại thuộc Hệ sinh thái Sala Phân khu Bắc',
-        statsValueFirst: true,
-        stats: [['16.319 m²', 'Diện tích khu đất'], ['04', 'Tháp căn hộ'], ['480 căn', 'Tổng số căn hộ'], ['60 căn', 'Shop Apartment']],
-        gallery: ['assets/img/thumb-a.jpg', 'assets/img/thumb-b.jpg', 'assets/img/project-sarene.jpg'],
+        /* stats: [label, value] — label left, value right for every popover (feedback 02/11) */
+        stats: [['Diện tích khu đất', '16.319 m²'], ['Tháp căn hộ', '04'], ['Tổng số căn hộ', '441 căn'], ['Shop Apartment', '60 căn']],
+        /* renders from the client (02/11): full size opens in the viewer, small copies in the strip */
+        gallery: [{ src: 'assets/img/sarene/01.webp', thumb: 'assets/img/sarene/01-t.webp' }, { src: 'assets/img/sarene/02.webp', thumb: 'assets/img/sarene/02-t.webp' }, { src: 'assets/img/sarene/03.webp', thumb: 'assets/img/sarene/03-t.webp' }, { src: 'assets/img/sarene/04.webp', thumb: 'assets/img/sarene/04-t.webp' }, { src: 'assets/img/sarene/05.webp', thumb: 'assets/img/sarene/05-t.webp' }, { src: 'assets/img/sarene/06.webp', thumb: 'assets/img/sarene/06-t.webp' }, { src: 'assets/img/sarene/07.webp', thumb: 'assets/img/sarene/07-t.webp' }, { src: 'assets/img/sarene/08.webp', thumb: 'assets/img/sarene/08-t.webp' }, { src: 'assets/img/sarene/09.webp', thumb: 'assets/img/sarene/09-t.webp' }, { src: 'assets/img/sarene/10.webp', thumb: 'assets/img/sarene/10-t.webp' }, { src: 'assets/img/sarene/11.webp', thumb: 'assets/img/sarene/11-t.webp' }, { src: 'assets/img/sarene/12.webp', thumb: 'assets/img/sarene/12-t.webp' }],
         cta: 'Xem chi tiết dự án', href: '#'
       } },
     { id: 'sadora', name: 'Sadora', x: 1031, y: 331, side: 'right', data: null },
-    { id: 'sarene', name: 'Sarene', x: 823, y: 271, side: 'left', data: null },
     { id: 'saroma-villa', name: 'Saroma Villa', x: 640, y: 272, side: 'left', data: null },
     { id: 'saritown', name: 'Saritown', x: 835, y: 476, side: 'left', data: null },
     { id: 'savila', name: 'Savila', x: 985, y: 603, side: 'left', data: null },
@@ -127,11 +127,11 @@ window.SALA_DATA = {
     { id: 'cung-van-hoa', icon: 'vui-choi', name: 'Cung văn hóa thiếu nhi', x: 886, y: 307, featured: true,
       data: {
         title: 'Cung văn hóa thiếu nhi',
-        image: 'assets/img/amenity-cung-van-hoa.jpg',
+        image: 'assets/img/cung-van-hoa/01.webp',
         desc: 'Không gian văn hóa, giáo dục và vui chơi dành cho trẻ em và gia đình, tích hợp các hoạt động học tập, sáng tạo, nghệ thuật và thể thao trong hệ sinh thái Sala.',
-        statsValueFirst: false,
         stats: [['Quy mô khuôn viên', '20.000 m²'], ['Sức chứa tối đa', '20.000 người'], ['Không gian chức năng', '05 tầng'], ['Giờ hoạt động dự kiến', '08:00 – 21:00']],
-        gallery: ['assets/img/thumb-a.jpg', 'assets/img/thumb-b.jpg', 'assets/img/amenity-cung-van-hoa.jpg'],
+        /* renders from the client (02/11) */
+        gallery: [{ src: 'assets/img/cung-van-hoa/01.webp', thumb: 'assets/img/cung-van-hoa/01-t.webp' }, { src: 'assets/img/cung-van-hoa/02.webp', thumb: 'assets/img/cung-van-hoa/02-t.webp' }, { src: 'assets/img/cung-van-hoa/03.webp', thumb: 'assets/img/cung-van-hoa/03-t.webp' }, { src: 'assets/img/cung-van-hoa/04.webp', thumb: 'assets/img/cung-van-hoa/04-t.webp' }],
         cta: 'Xem chi tiết tiện ích', href: '#'
       } },
     { id: 'ben-du-thuyen', icon: 'du-thuyen', name: 'Bến du thuyền', x: 1843, y: 607, featured: true, data: null },

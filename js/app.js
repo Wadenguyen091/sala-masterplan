@@ -19,7 +19,7 @@
   };
 
   var MAPS = {
-    overview: { w: 2030, h: 1471, bounds: [0, 183, 1647, 1471] },
+    overview: { w: 2030, h: 1471, bounds: [82.9, 335.7, 1387.8, 1356.9] },   /* = the HD map's own extent (map-overview-hd.webp) */
     plan2d: { w: 2030, h: 1471, bounds: [0, 0, 2030, 1471] },
     master3d: { w: 1648, h: 920, bounds: [0, 0, 1648, 920] },
     amenity: { w: 2215, h: 1236, bounds: [0, 0, 2215, 1236] }
@@ -63,54 +63,108 @@
       return taper(s, L, L * o.bandFade) * smooth((f - s) / W);
     }
   };
-  /* o: { grad, color, core, width, glowWidth, glowFilter, radius, spacing, profile, head, tail, endFade, bandFade } */
+  /* ---------- light engine: all road / outline lights of a map are drawn on ONE screen-space canvas ----------
+     (the previous per-light SVG masks + blur filters had to be re-rasterised every frame and made pan/zoom lag).
+     Each light keeps its path only for geometry (sampled once); every frame the engine strokes short segments whose
+     alpha follows the light's profile, in screen space with the map camera, so it stays crisp at any zoom. */
+  function lightEngine(svg) {
+    if (svg.__eng) return svg.__eng;
+    var host = svg.__host;   /* { app, map } set by the map builder */
+    var cv = el('canvas', 'mm-lightcv'), ctx = cv.getContext('2d');
+    var L = host.app.layers[host.map];
+    L.el.insertBefore(cv, L.markersEl);
+    var eng = svg.__eng = { cv: cv, ctx: ctx, lights: [], w: 0, h: 0 };
+    eng.tick = function () {
+      var app = host.app;
+      if (L.el.style.visibility === 'hidden' || !app.fw) return;
+      var dpr = Math.min(window.devicePixelRatio || 1, 2), W = Math.round(app.fw * dpr), H = Math.round(app.fh * dpr);
+      if (W !== eng.w || H !== eng.h) { cv.width = eng.w = W; cv.height = eng.h = H; cv.style.width = app.fw + 'px'; cv.style.height = app.fh + 'px'; }
+      ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, W, H);
+      var cam = L.cam, k = cam.s * dpr;
+      ctx.setTransform(k, 0, 0, k, cam.tx * dpr, cam.ty * dpr);
+      ctx.lineCap = 'butt'; ctx.lineJoin = 'round';
+      for (var i = 0; i < eng.lights.length; i++) eng.lights[i].paint(ctx);
+    };
+    G.ticker.add(eng.tick);
+    return eng;
+  }
+  function hexA(hex, a) {
+    var n = parseInt(hex.slice(1), 16);
+    return 'rgba(' + (n >> 16 & 255) + ',' + (n >> 8 & 255) + ',' + (n & 255) + ',' + a.toFixed(3) + ')';
+  }
+  /* o: { color, core, width, glowWidth, spacing, profile, head, tail, endFade, bandFade } (sizes in the path's own units) */
   function makeLight(svg, parent, d, o) {
-    var id = 'mmLt' + (++LIGHT_N), defs = svg.querySelector('defs');
-    var mask = svgEl('mask', { id: id, maskUnits: 'userSpaceOnUse', maskContentUnits: 'userSpaceOnUse', x: -600, y: -600, width: 4200, height: 3400 });
-    defs.appendChild(mask);
-    var g = svgEl('g', { 'class': 'mm-comet', mask: 'url(#' + id + ')' });
-    if (o.glowWidth) {
-      var glow = svgEl('path', { 'class': 'mm-comet__glow', d: d, stroke: o.color, 'stroke-width': o.glowWidth });
-      if (o.glowFilter) glow.setAttribute('filter', 'url(#' + o.glowFilter + ')');
-      g.appendChild(glow);
-    }
-    var core = svgEl('path', { 'class': 'mm-comet__core', d: d, stroke: o.core || o.color, 'stroke-width': o.width });
-    g.appendChild(core); parent.appendChild(g);
-    var prof = PROFILES[o.profile || 'comet'];
-    var lt = { g: g, path: core, dots: null, len: 0, st: { front: -1e9, p: 0, u: null } };
+    var geo = svgEl('path', { 'class': 'mm-light-geo', d: d, fill: 'none', stroke: 'none' });
+    parent.appendChild(geo);
+    var eng = lightEngine(svg), prof = PROFILES[o.profile || 'comet'];
+    var g = { opacity: 1 };   /* GSAP tweens this like an element's opacity */
+    var lt = { g: g, path: geo, pts: null, len: 0, st: { front: -1e9, p: 0, u: null } };
     function build() {
-      var L = core.getTotalLength(); if (!L) return false;
-      var sp = o.spacing || o.radius / 2.6, n = Math.max(2, Math.ceil(L / sp)), dots = [];
+      var L = geo.getTotalLength(); if (!L) return false;
+      var M = geo.getCTM(); if (!M) return false;
+      /* map units per path unit (3D roads are drawn at 1.289x and scaled down) */
+      var sc = Math.sqrt(M.a * M.a + M.b * M.b), step = Math.max(1.5, (o.spacing || 6) / 3);
+      var n = Math.max(2, Math.ceil(L / step)), pts = new Float32Array((n + 1) * 3);
       for (var i = 0; i <= n; i++) {
-        var s = L * i / n, q = core.getPointAtLength(s);
-        var c = svgEl('circle', { cx: q.x.toFixed(1), cy: q.y.toFixed(1), r: o.radius, fill: 'url(#' + o.grad + ')', opacity: 0 });
-        mask.appendChild(c); dots.push({ el: c, s: s, v: 0 });
+        var s = L * i / n, q = geo.getPointAtLength(s);
+        pts[i * 3] = M.a * q.x + M.c * q.y + M.e; pts[i * 3 + 1] = M.b * q.x + M.d * q.y + M.f; pts[i * 3 + 2] = s;
       }
-      lt.dots = dots; lt.len = L; return true;
+      lt.pts = pts; lt.n = n; lt.len = L; lt.sc = sc; lt.gap = step * sc * 4; return true;
     }
-    lt.draw = function () {
-      if (!lt.dots && !build()) return;
-      var L = lt.len, ds = lt.dots;
-      if (lt.st.u != null) lt.st.front = -2 * o.head + lt.st.u * (L + o.tail + 3 * o.head);
-      for (var i = 0; i < ds.length; i++) {
-        var v = prof(ds[i].s, L, lt.st, o);
-        if (Math.abs(v - ds[i].v) > 0.004 || (v === 0 && ds[i].v !== 0)) { ds[i].v = v; ds[i].el.setAttribute('opacity', v.toFixed(3)); }
+    lt.paint = function (ctx) {
+      if (g.opacity < 0.01) return;
+      if (!lt.pts && !build()) return;
+      var L = lt.len, pts = lt.pts, n = lt.n, st = lt.st;
+      if (st.u != null) st.front = -2 * o.head + st.u * (L + o.tail + 3 * o.head);
+      var passes = o.glowWidth ? [[o.color, o.glowWidth * 1.5, 0.07], [o.color, o.glowWidth, 0.12], [o.color, o.glowWidth * 0.55, 0.2], [o.color, o.glowWidth * 0.28, 0.3], [o.core || o.color, o.width, 0.95]]
+                               : [[o.core || o.color, o.width, 0.95]];
+      /* visible range only (comets cover a short stretch) */
+      var i0 = 0, i1 = n;
+      if (o.profile !== 'band') { var a0 = st.front - o.tail, a1 = st.front + o.head * 2.2; i0 = Math.max(0, Math.floor(a0 / L * n)); i1 = Math.min(n, Math.ceil(a1 / L * n)); }
+      if (i1 <= i0) return;
+      /* alpha along the stretch, quantised: contiguous runs of equal alpha are stroked as ONE polyline
+         (no per-segment seams), so the light reads as a single smooth stroke at any zoom */
+      var lv = lt.lv || (lt.lv = new Float32Array(n + 1)), Q = 24;
+      for (var i = i0; i < i1; i++) {
+        var j = i * 3;
+        lv[i] = (Math.abs(pts[j + 3] - pts[j]) + Math.abs(pts[j + 4] - pts[j + 1]) > lt.gap) ? -1
+          : Math.round(prof((pts[j + 2] + pts[j + 5]) / 2, L, st, o) * Q) / Q;
+      }
+      for (var p = 0; p < passes.length; p++) {
+        var col = passes[p][0], a = passes[p][2] * g.opacity;
+        ctx.lineWidth = passes[p][1] * lt.sc;
+        var k = i0;
+        while (k < i1) {
+          var q = lv[k], e = k;
+          while (e + 1 < i1 && lv[e + 1] === q) e++;
+          if (q > 0.02) {
+            ctx.strokeStyle = hexA(col, a * q);
+            ctx.beginPath(); ctx.moveTo(pts[k * 3], pts[k * 3 + 1]);
+            for (var m = k + 1; m <= e + 1; m++) ctx.lineTo(pts[m * 3], pts[m * 3 + 1]);
+            ctx.stroke();
+          }
+          k = e + 1;
+        }
       }
     };
+    lt.draw = function () { };
+    eng.lights.push(lt);
     /* comet runner: front travels from before the start until the whole tail has left the end */
     lt.run = function (dur, delay, gap) {
-      lt.tween = G.fromTo(lt.st, { u: 0 }, { u: 1, duration: dur, ease: 'none', repeat: -1, repeatDelay: gap == null ? 1 : gap, delay: delay || 0, onUpdate: lt.draw });
+      lt.tween = G.fromTo(lt.st, { u: 0 }, { u: 1, duration: dur, ease: 'none', repeat: -1, repeatDelay: gap == null ? 1 : gap, delay: delay || 0 });
       return lt;
     };
+    /* a single linear pass (used by the per-map comet scheduler) */
+    lt.pass = function (dur) { return G.fromTo(lt.st, { u: 0 }, { u: 1, duration: dur, ease: 'none' }); };
     /* one pass of the comet (e.g. around a building outline on hover) */
     lt.once = function (dur) {
       G.killTweensOf(lt.st); G.killTweensOf(g); G.set(g, { opacity: 1 });
-      return G.fromTo(lt.st, { u: 0 }, { u: 1, duration: dur, ease: 'power1.inOut', onUpdate: lt.draw });
+      return G.fromTo(lt.st, { u: 0 }, { u: 1, duration: dur, ease: 'power1.inOut' });
     };
     /* band: wipe on (p 0 → 1) / off */
-    lt.show = function (dur, delay) { G.killTweensOf(lt.st); if (!delay) G.killTweensOf(g); G.to(g, { opacity: 1, duration: 0.2, overwrite: 'auto', delay: delay || 0 }); return G.fromTo(lt.st, { p: 0 }, { p: 1, duration: dur, ease: 'power2.inOut', delay: delay || 0, onUpdate: lt.draw }); };
+    lt.show = function (dur, delay) { G.killTweensOf(lt.st); if (!delay) G.killTweensOf(g); G.to(g, { opacity: 1, duration: 0.2, overwrite: 'auto', delay: delay || 0 }); return G.fromTo(lt.st, { p: 0 }, { p: 1, duration: dur, ease: 'power2.inOut', delay: delay || 0 }); };
     lt.hide = function (dur, delay) { return G.to(g, { opacity: 0, duration: dur || 0.4, delay: delay || 0, overwrite: 'auto' }); };
-    lt.full = function () { lt.st.p = 1; lt.draw(); if (!lt.dots) requestAnimationFrame(lt.full); };
+    lt.full = function () { lt.st.p = 1; };
     return lt;
   }
   /* One road-light look for every map (overview + urban 3D): same colours, sizes and timing.
@@ -129,8 +183,24 @@
     }
     var hl = makeLight(svg, g, d, cfg(ROAD_FX.hl, glowId));
     G.set(hl.g, { opacity: 0 });
-    var comet = makeLight(svg, g, d, cfg(ROAD_FX.comet, softId)).run(dur, G.utils.random(0, 2.5), gap == null ? 1 : gap);
+    var comet = makeLight(svg, g, d, cfg(ROAD_FX.comet, softId));
+    comet.st.u = 1;   /* parked past the end: invisible until its turn */
+    /* idle lights: once in a while, one road at a time (a calm map, feedback 02/11) — not every road on a loop */
+    var list = svg.__comets || (svg.__comets = []);
+    list.push({ lt: comet, dur: dur });
+    if (!svg.__cometLoop) { svg.__cometLoop = true; G.delayedCall(G.utils.random(1.5, 3), function () { cometLoop(list); }); }
     return { hl: hl, comet: comet };
+  }
+  var COMET_GAP = [6, 10];   /* seconds of quiet between two passes on the same map */
+  function cometLoop(list) {
+    var last = -1;
+    (function next() {
+      if (!list.length) return;
+      var i = Math.floor(Math.random() * list.length);
+      if (list.length > 1 && i === last) i = (i + 1) % list.length;
+      last = i;
+      list[i].lt.pass(list[i].dur).eventCallback('onComplete', function () { G.delayedCall(G.utils.random(COMET_GAP[0], COMET_GAP[1]), next); });
+    })();
   }
   /* where each display mode lives; the single-file test build overrides this with hash routes */
   var MODE_HREF = window.SALA_MODE_HREF || { section: 'index.html', page: 'masterplan.html' };
@@ -179,7 +249,7 @@
        alpha             global opacity                                          */
   var CLOUD_FS = [
     'precision highp float;',
-    'uniform vec2 uRes; uniform float uTime, uDensity, uScale, uHole, uEdge, uAlpha; uniform vec2 uPan;',
+    'uniform vec2 uRes; uniform float uTime, uDensity, uScale, uHole, uEdge, uAlpha, uSweep, uSweepL, uSweepT, uDrift; uniform vec2 uPan;',
     'float hash(vec2 p){ p = fract(p*vec2(123.34, 456.21)); p += dot(p, p+45.32); return fract(p.x*p.y); }',
     'float noise(vec2 p){ vec2 i=floor(p), f=fract(p); vec2 u=f*f*(3.0-2.0*f);',
     '  return mix(mix(hash(i), hash(i+vec2(1,0)), u.x), mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), u.x), u.y); }',
@@ -197,16 +267,18 @@
     '  float t = uTime;',
     '  float thr = mix(0.86, 0.12, uDensity);',
     /* near layer */
-    '  vec2 p1 = c * 1.7 / uScale + uPan + vec2(t*0.012, t*0.004);',
+    /* idle edge mist (uEdge 1): small soft puffs — about twice the frequency of the covering bank (uEdge 0) */
+    '  float fq = mix(1.0, 2.1, max(uEdge, uSweep));',   /* fine puffs for the edge mist and the sweep */
+    '  vec2 p1 = c * 1.7 * fq / uScale + uPan + vec2(uDrift + t*0.012, t*0.004);',
     '  float n1 = cloud(p1, t);',
     '  float l1 = cloud(p1 + vec2(-0.09, 0.09), t);',
-    '  float a1 = smoothstep(thr, thr + 0.24, n1);',
+    '  float a1 = smoothstep(thr, thr + mix(0.24, 0.34, uEdge), n1);',
     '  float s1 = clamp(0.6 + (n1 - l1) * 4.5 + (n1 - thr) * 0.9, 0.0, 1.0);',
     /* far layer: bigger, slower, paler — gives depth */
-    '  vec2 p2 = c * 1.05 / (0.6 + 0.4*uScale) + uPan*0.55 + vec2(19.3, 7.1) + vec2(t*0.006, t*0.002);',
+    '  vec2 p2 = c * 1.05 * fq / (0.6 + 0.4*uScale) + uPan*0.55 + vec2(19.3 + uDrift*0.7, 7.1) + vec2(t*0.006, t*0.002);',
     '  float n2 = fbm5(p2 + 0.5*fbm3(p2*0.6 + t*0.01));',
     '  float a2 = smoothstep(thr + 0.04, thr + 0.32, n2) * 0.75;',
-    '  vec3 shadow = vec3(0.66, 0.70, 0.76), light = vec3(1.0, 0.992, 0.972);',
+    '  vec3 light = vec3(1.0, 0.992, 0.972), shadow = mix(vec3(0.66, 0.70, 0.76), vec3(0.84, 0.86, 0.89), uEdge);',
     '  vec3 c1 = mix(shadow, light, s1);',
     '  vec3 c2 = mix(vec3(0.80, 0.83, 0.87), vec3(0.97, 0.97, 0.96), clamp(0.5 + (n2 - thr) * 1.6, 0.0, 1.0));',
     '  float a = a1 + a2 * (1.0 - a1);',
@@ -215,6 +287,10 @@
     '  a *= mix(1.0, smoothstep(0.40, 1.25, r), uEdge);',
     '  float rc = length(c) * 1.4;',
     '  a *= smoothstep(uHole - 0.6, uHole + 0.05, rc + (n1 - 0.5) * 0.7);',
+    /* sweep (quick tab change): a cloud band enters from the left (front L) and leaves to the right (back T), wispy edges */
+    '  float xn = uv.x + (n1 - 0.5) * 0.45 + (uv.y - 0.5) * 0.08;',
+    '  float sw = smoothstep(uSweepT - 0.32, uSweepT + 0.32, xn) * (1.0 - smoothstep(uSweepL - 0.32, uSweepL + 0.28, xn));',
+    '  a *= mix(1.0, sw, uSweep);',
     '  a *= uAlpha;',
     '  gl_FragColor = vec4(col * a, a);',
     '}'
@@ -223,8 +299,8 @@
   function CloudLayer(host) {
     var cv = this.canvas = el('canvas', 'mm-cloudgl');
     host.appendChild(cv);
-    this.u = { density: 0, scale: 1, hole: 0, edge: 1, alpha: 1, panX: 0, panY: 0, time: G.utils.random(0, 200) };
-    this.res = 0.5;
+    this.u = { density: 0, scale: 1, hole: 0, edge: 1, alpha: 1, panX: 0, panY: 0, sweep: 0, sweepL: 0, sweepT: 0, drift: 0, time: G.utils.random(0, 200) };
+    this.res = 0.4;
     var gl = this.gl = cv.getContext('webgl', { premultipliedAlpha: true, alpha: true, antialias: false });
     this.ok = !!gl;
     if (!gl) { cv.classList.add('is-fallback'); return; }
@@ -243,7 +319,7 @@
     gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
     this.loc = {};
     var self = this;
-    ['uRes', 'uTime', 'uDensity', 'uScale', 'uHole', 'uEdge', 'uAlpha', 'uPan'].forEach(function (n) { self.loc[n] = gl.getUniformLocation(prog, n); });
+    ['uRes', 'uTime', 'uDensity', 'uScale', 'uHole', 'uEdge', 'uAlpha', 'uPan', 'uSweep', 'uSweepL', 'uSweepT', 'uDrift'].forEach(function (n) { self.loc[n] = gl.getUniformLocation(prog, n); });
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     this.tick = this.render.bind(this);
@@ -260,6 +336,9 @@
     if (!this.ok || !this.visible) return;
     var u = this.u, gl = this.gl;
     u.time += (dt || 16) / 1000;
+    /* idle mist drifts slowly: 30 fps is indistinguishable and halves the GPU cost while panning */
+    this._f = (this._f || 0) + 1;
+    if (u.edge > 0.99 && u.hole < 0.01 && (this._f & 1)) return;
     if (u.alpha * u.density < 0.004) { if (!this._cleared) { gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); this._cleared = true; } return; }
     this._cleared = false;
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
@@ -272,15 +351,17 @@
     gl.uniform1f(this.loc.uEdge, u.edge);
     gl.uniform1f(this.loc.uAlpha, u.alpha);
     gl.uniform2f(this.loc.uPan, u.panX, u.panY);
+    gl.uniform1f(this.loc.uSweep, u.sweep); gl.uniform1f(this.loc.uSweepL, u.sweepL); gl.uniform1f(this.loc.uSweepT, u.sweepT); gl.uniform1f(this.loc.uDrift, u.drift);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   };
 
   /* ambient cloud presets per map (edge-only drifting mist) */
   var AMBIENT = {
-    overview: { density: 0.62, edge: 1, alpha: 0.9 },
-    plan2d: { density: 0.55, edge: 1, alpha: 0.75 },
-    master3d: { density: 0.66, edge: 1, alpha: 0.95 },
-    amenity: { density: 0.6, edge: 1, alpha: 0.85 }
+    /* idle edge mist: light, only drifting along the frame edges (feedback 02/11: don't hide the map) */
+    overview: { density: 0.44, edge: 1, alpha: 0.65 },
+    plan2d: { density: 0.4, edge: 1, alpha: 0.6 },
+    master3d: { density: 0.46, edge: 1, alpha: 0.7 },
+    amenity: { density: 0.42, edge: 1, alpha: 0.65 }
   };
 
   /* ======================================================= */
@@ -291,6 +372,7 @@
     this.active = 'overview';
     this.busy = false;
     this.layers = {};
+    this.pending = {};   /* map images not requested yet (see lazy / loadMap) */
     this.markers = { overview: [], plan2d: [], master3d: [], amenity: [] };
     this.selection = null;
     this.hovered = null;
@@ -303,10 +385,10 @@
     G.set(this.layers.overview.el, { autoAlpha: 1 });
     this.layers.overview.el.classList.add('is-active');
     this.updateChrome();
-    this.intro();
-    /* arriving from the other display mode: continue on the same view */
+    /* arriving from the other display mode: open straight on the same view */
     var want = (location.hash.match(/view=(tod|urban|amenity)/) || [])[1];
-    if (want) G.delayedCall(0.5, function () { self.go(want); });
+    if (want === 'tod') want = 'urban';
+    this.intro(want);
   }
   var P = MasterMap.prototype;
 
@@ -322,12 +404,8 @@
       head.appendChild(this.titleEl);
       head.appendChild(el('p', 'mm-desc', esc(D.description)));
       root.appendChild(head);
-      this.modeEl = el('div', 'mm-mode');
-      this.modeEl.setAttribute('role', 'tablist');
-      this.modeEl.innerHTML = '<span class="mm-mode__indicator"></span>' +
-        '<button type="button" role="tab" data-go="overview">' + icon(I.location) + '<span>Bản đồ tổng quan</span></button>' +
-        '<button type="button" role="tab" data-go="urban">' + icon(I.city) + '<span>Bản đồ khu đô thị</span></button>';
-      root.appendChild(this.modeEl);
+      /* the outer "Bản đồ tổng quan / Bản đồ khu đô thị" switch is gone: the embed uses the same single
+         3-tab bar as the full page (feedback 02/11), placed inside the map */
     }
 
     var frame = this.frame = el('div', 'mm-frame');
@@ -335,6 +413,8 @@
     var stage = this.stage = el('div', 'mm-stage');
     stage.setAttribute('aria-label', 'Bản đồ tương tác SALA');
     frame.appendChild(stage);
+    /* a soft dark fade at the bottom of the screen (black 30% → 0%, fixed while zooming) so the logo and tab bar read on any map */
+    frame.appendChild(el('div', 'mm-bottomfade'));
 
     Object.keys(MAPS).forEach(function (k) {
       var L = el('div', 'mm-layer');
@@ -347,7 +427,7 @@
       G.set(L, { autoAlpha: 0 });
       self.layers[k] = { el: L, canvas: canvas, markersEl: markers, cam: { s: 1, tx: 0, ty: 0 } };
     });
-    this.buildOverview(); this.buildPlan(); this.buildMaster(); this.buildAmenity();
+    this.buildOverview(); /* buildPlan() kept but not built: 2D TOD step dropped */ this.buildMaster(); this.buildAmenity();
 
     /* clouds: a single WebGL layer above every map */
     var clouds = this.clouds = el('div', 'mm-clouds');
@@ -357,53 +437,59 @@
     clouds.appendChild(this.veil);
     G.set(this.veil, { autoAlpha: 0 });
     Object.assign(this.cloud.u, AMBIENT.overview, { density: 0 });
-    this.loader = el('div', 'mm-loader', '<img src="' + IMG + 'pattern-sala.png" alt="">');
+    this.loader = el('div', 'mm-loader', '<img src="' + IMG + 'pattern-sala.webp" alt="">');
     frame.appendChild(this.loader);
     G.set(this.loader, { autoAlpha: 0, scale: 0.6 });
 
     var ctr = this.controls = el('div', 'mm-controls');
-    var light = this.mode === 'page' ? ' mm-ctrl--light' : '';
+    var light = ' mm-ctrl--light';   /* same tool column in section and page: gold zoom pair, cream single buttons */
     ctr.innerHTML =
       '<div class="mm-ctrl"><button type="button" data-act="zin" aria-label="Phóng to">' + icon(I.plus) + '</button>' +
       '<button type="button" data-act="zout" aria-label="Thu nhỏ">' + icon(I.minus) + '</button></div>' +
-      '<div class="mm-ctrl' + light + '" data-ctrl="reload"><button type="button" data-act="reload" aria-label="Tải lại bản đồ">' + icon(I.reload) + '</button></div>' +
+      '<div class="mm-ctrl' + light + '" data-ctrl="reload"><button type="button" data-act="reload" aria-label="Về góc nhìn ban đầu">' + icon(I.reload) + '</button></div>' +
       (this.mode === 'page' ? '<div class="mm-ctrl mm-ctrl--light"><button type="button" data-act="full" aria-label="Toàn màn hình">' + icon(I.expand) + '</button></div>' : '');
     /* display mode: one button in the control column — section: open the full Masterplan page;
        page: back to the section. The current view (TOD / urban / amenity) carries over. */
     /* demo-only switch: a swap icon (not a design control) + a tooltip saying it is just for the demo */
-    var ICON_SWAP = '<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3.5 7h12M12.5 4l3 3-3 3M16.5 13h-12M7.5 10l-3 3 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-    var toPage = this.mode === 'section', tipTxt = toPage ? 'Chuyển sang chế độ Page' : 'Chuyển về chế độ Section';
+    /* section → "Xem toàn màn hình" (4 arrows out) opens the full Masterplan page;
+       page → "Quay lại trang trước" (back arrow): back in history, or to the home page (section) when opened directly */
+    var ICON_BACK = '<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M16 10H4.5M9 5l-5 5 5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    var toPage = this.mode === 'section', tipTxt = toPage ? 'Xem toàn màn hình' : 'Quay lại trang trước';
     var mb = el('div', 'mm-ctrl' + light + ' mm-ctrl--mode',
-      '<button type="button" data-act="mode" aria-label="Demo: ' + tipTxt + '" aria-describedby="mmModeTip">' + ICON_SWAP + '</button>' +
-      '<span class="mm-tip" id="mmModeTip" role="tooltip"><b>Demo</b>' + tipTxt + '</span>');
-    mb.querySelector('button').addEventListener('click', function () { location.href = modeHref(toPage ? 'page' : 'section', self.view); });
+      '<button type="button" data-act="mode" aria-label="' + tipTxt + '" data-tip="' + tipTxt + '">' + (toPage ? icon(I.expand) : ICON_BACK) + '</button>');
+    mb.querySelector('button').addEventListener('click', function () {
+      if (toPage) { location.href = modeHref('page', self.view); return; }
+      var ref = ''; try { ref = document.referrer && new URL(document.referrer).origin === location.origin ? document.referrer : ''; } catch (e) { }
+      if (window.SALA_MODE_HREF || !ref || history.length < 2) location.href = modeHref('section', self.view); else history.back();
+    });
     ctr.appendChild(mb);
+    /* hover tooltips on the tools (their own label, Sala gold, to the right of the column) */
+    ctr.querySelectorAll('button[data-act]:not([data-act="mode"])').forEach(function (b) { b.setAttribute('data-tip', b.getAttribute('aria-label')); });
     frame.appendChild(ctr);
 
 
-    this.legend = el('div', 'mm-legend', '<img src="' + IMG + 'legend.jpg" alt="Chú thích bản đồ">');
+    this.legend = el('div', 'mm-legend', '<img src="' + IMG + 'legend-hd.webp" alt="Chú thích bản đồ">');
     frame.appendChild(this.legend);
 
     if (this.mode === 'section') {
-      var tabs = this.tabsEl = el('div', 'mm-tabs');
-      tabs.setAttribute('role', 'tablist');
-      tabs.innerHTML = '<span class="mm-tabs__indicator"></span>' +
-        '<button type="button" role="tab" data-go="urban">' + icon(I.city) + '<span>Khu đô thị</span></button>' +
-        '<button type="button" role="tab" data-go="amenity">' + icon(I.pool) + '<span>Tiện ích</span></button>';
-      frame.appendChild(tabs);
-      G.set(tabs, { autoAlpha: 0, y: 14 });
+      /* one 3-tab bar, same as the full page: Tổng quan / Khu đô thị / Tiện ích, always at the bottom centre of the map */
+      var bar = this.ptabs = el('div', 'mm-ptabs mm-ptabs--embed');
+      bar.setAttribute('role', 'tablist');
+      bar.innerHTML = '<span class="mm-ptabs__indicator"></span>' +
+        '<button type="button" role="tab" data-go="overview" aria-label="Tổng quan">' + icon(I.location) + '<span>Tổng quan</span></button>' +
+        '<button type="button" role="tab" data-go="urban" aria-label="Khu đô thị">' + icon(I.city) + '<span>Khu đô thị</span></button>' +
+        '<button type="button" role="tab" data-go="amenity" aria-label="Tiện ích">' + icon(I.pool) + '<span>Tiện ích</span></button>';
+      frame.appendChild(bar);
     } else {
       var header = el('div', 'mm-header');
       header.innerHTML =
-        '<div class="mm-header__logo"><img src="' + IMG + 'logo-sala.png" alt="Sala"></div>' +
         '<div class="mm-ptabs" role="tablist"><span class="mm-ptabs__indicator"></span>' +
         '<button type="button" role="tab" data-go="overview" aria-label="Tổng quan">' + icon(I.location) + '<span>Tổng quan</span></button>' +
         '<button type="button" role="tab" data-go="urban" aria-label="Khu đô thị">' + icon(I.city) + '<span>Khu đô thị</span></button>' +
-        '<button type="button" role="tab" data-go="amenity" aria-label="Tiện ích">' + icon(I.pool) + '<span>Tiện ích</span></button></div>' +
-        '<div class="mm-header__logo mm-header__logo--ghost" aria-hidden="true"><img src="' + IMG + 'logo-sala.png" alt=""></div>';
+        '<button type="button" role="tab" data-go="amenity" aria-label="Tiện ích">' + icon(I.pool) + '<span>Tiện ích</span></button></div>';   /* no Sala logo in the full map (02/11) */
       frame.appendChild(header);
       this.ptabs = header.querySelector('.mm-ptabs');
-      this.buildRotate();
+      /* portrait phones: no full-screen "rotate" wall any more — a small dismissible hint instead (buildRotateHint) */
     }
 
     /* hover card */
@@ -423,6 +509,31 @@
     frame.appendChild(panel);
     this.hint = el('div', 'mm-hint');
     frame.appendChild(this.hint);
+    this.buildRotateHint();
+  };
+
+  /* portrait phone: a non-blocking pill suggests turning the phone; the map stays fully usable upright.
+     Closes on ×, on its own after 7 s, or as soon as the phone is turned; shown once per session. */
+  P.buildRotateHint = function () {
+    var self = this, h = this.rotHint = el('div', 'mm-rothint');
+    h.setAttribute('role', 'status');
+    h.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="7" y="2.5" width="10" height="17" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M19.5 14.5a6.5 6.5 0 0 1-5 6.3M18 19.5l1.6 1.4-1.4 1.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+      '<span>Xoay ngang để xem rõ hơn</span><button type="button" aria-label="Đóng gợi ý">×</button>';
+    this.frame.appendChild(h);
+    G.set(h, { autoAlpha: 0, y: -8 });
+    var shown = false;
+    function portrait() { return window.matchMedia('(max-width: 767px) and (orientation: portrait)').matches; }
+    function hide() { clearTimeout(self.rotHintT); G.to(h, { autoAlpha: 0, y: -8, duration: 0.3, overwrite: true }); }
+    this.showRotateHint = function () {
+      var seen = false; try { seen = sessionStorage.getItem('sala-rot-hint') === '1'; } catch (e) { }
+      if (shown || seen || !portrait()) return;
+      shown = true; try { sessionStorage.setItem('sala-rot-hint', '1'); } catch (e) { }
+      G.to(h, { autoAlpha: 1, y: 0, duration: 0.45, ease: 'power3.out', delay: 0.6 });
+      self.rotHintT = setTimeout(hide, 7600);
+    };
+    h.querySelector('button').addEventListener('click', hide);
+    window.addEventListener('orientationchange', hide);
+    window.addEventListener('resize', function () { if (!portrait()) hide(); });
   };
 
   P.buildRotate = function () {
@@ -455,7 +566,17 @@
   P.buildOverview = function () {
     var c = this.layers.overview.canvas, self = this;
     c.appendChild(el('div', 'mm-ov-bg'));
-    c.appendChild(el('div', 'mm-ov-img', '<img src="' + IMG + 'map-tong.jpg" alt="Bản đồ vị trí Hệ sinh thái SALA" draggable="false">'));
+    /* overview: the OpenStreetMap vector map (assets/map/overview.svg) baked with its sepia grade into a 2x raster
+       (tools/bake_overview.cjs) — sharp, and as light to pan/zoom as a plain image */
+    /* designer's raster map (map-tong.jpg). The OSM vector map + live labels (map-overview.webp, js/overview-labels.js)
+       stay in the repo: set OV_VECTOR = true to switch back */
+    c.appendChild(OV_VECTOR
+      ? el('div', 'mm-ov-img is-baked', '<img src="' + IMG + 'map-overview.webp" alt="Bản đồ vị trí Hệ sinh thái SALA" draggable="false" decoding="async">')
+      : el('div', 'mm-ov-img mm-ov-img--hd', '<img alt="Bản đồ vị trí Hệ sinh thái SALA" draggable="false" decoding="async">'));
+    if (!OV_VECTOR) this.lazy(c.querySelector('.mm-ov-img--hd img'), 'overview', IMG + 'map-overview-hd.webp');
+    /* map-overview-hd.webp: the designer's HD export (7482 px, scaled to 4096). It is registered on the old map-tong.jpg
+       by matching the brown arterials (new = 5.258 × old − (475, 876) in old raster px), so it sits at
+       map space (82.9, 335.7) 1304.9 × 1021.2 and every overlay (zone, pin, road lights) keeps its coordinates. */
     this.buildOverviewRoads(c);
     var z = D.overview.zone;
     var zone = this.salaZone = el('div', 'mm-zone mm-zone--sala', I.salaZone);
@@ -464,9 +585,11 @@
     var pin = this.salaPin = el('button', 'mm-sala-pin');
     pin.type = 'button';
     pin.setAttribute('aria-label', 'Khám phá Khu đô thị Sala');
-    pin.innerHTML = '<span class="mm-sala-pin__inner"><span class="mm-sala-pin__ring"></span><span class="mm-sala-pin__disc"><img src="' + IMG + 'pattern-sala.png" alt=""></span><span class="mm-sala-pin__tail">' + I.pinTail + '</span></span>';
-    pin.addEventListener('click', function () { if (!self.suppress) self.go('tod'); });
+    pin.innerHTML = '<span class="mm-sala-pin__inner"><span class="mm-sala-pin__ring"></span><span class="mm-sala-pin__disc"><img src="' + IMG + 'pattern-sala.webp" alt=""></span><span class="mm-sala-pin__tail">' + I.pinTail + '</span></span>';
+    /* SALA pin: straight into the 3D urban map (the green 2D TOD plan step is dropped, per feedback 02/11) */
+    pin.addEventListener('click', function () { if (!self.suppress) self.go('urban'); });
     this.addMarker('overview', pin, D.overview.pin.x, D.overview.pin.y);
+    if (OV_VECTOR) this.buildOvLabels();
   };
 
   /* Overview: highlight layer over the brown arterial roads baked into map-tong.jpg.
@@ -476,6 +599,7 @@
     var self = this, W = MAPS.overview.w, H = MAPS.overview.h, R = D.overviewRoads || [];
     if (!R.length) return;
     var svg = this.ovSvg = svgEl('svg', { 'class': 'mm-ovroads', width: W, height: H, viewBox: '0 0 ' + W + ' ' + H });
+    svg.__host = { app: this, map: 'overview' };
     svg.innerHTML = '<defs><filter id="mmOvGlow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="5"/></filter>' +
       '<filter id="mmOvSoft" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="3"/></filter>' + cometGradDefs('mmCometGradO') + '</defs>';
     this.ovDim = svgEl('rect', { 'class': 'mm-ov-dim', x: 0, y: 183, width: 1647, height: 1288 });
@@ -561,8 +685,338 @@
     });
     o.g.classList.toggle('is-hover', on);
     G.to(this.ovDim, { opacity: on ? 1 : 0, duration: 0.5, ease: 'power2.out', overwrite: true });
+    if (this.ovlEl) this.ovlEl.classList.toggle('is-dim', on);
     if (on) o.hl.show(1.1);
     else { o.hl.hide(0.4); this.hideRoadTag('overview'); }
+  };
+
+
+  /* ---------- overview labels: live cartographic placement ----------
+     The map image carries no text (tools/build_overview_svg.py -> js/overview-labels.js). Each label is a DOM node
+     placed in screen space whenever the camera moves:
+       · constant on-screen size at every zoom; more names appear as you zoom in (zoom tiers `z`, × default zoom)
+       · greedy placement by priority `p`: nothing overlaps another label, an icon, the Sala pin or the UI
+       · icon captions try 4 spots around their icon; road names sit on the straightest visible stretch of the
+         road; the river name is set letter by letter along its curve; area names show only while they fit inside
+       · hysteresis (a shown label keeps its spot and a small priority bonus) so labels don't flicker while panning */
+  var OV_VECTOR = false;   /* false: designer's raster overview (map-tong.jpg); true: OSM vector map + live labels */
+  var OVL = { gap: 4, cell: 48, tol: { road: 1.6, art: 2.4, line: 2.6 }, rep: 460, step: 18 };
+  function ovlLine(pts) {
+    var n = pts.length, X = new Float32Array(n), Y = new Float32Array(n), S = new Float32Array(n), bb = [1e9, 1e9, -1e9, -1e9];
+    for (var i = 0; i < n; i++) {
+      X[i] = pts[i][0]; Y[i] = pts[i][1];
+      S[i] = i ? S[i - 1] + Math.hypot(X[i] - X[i - 1], Y[i] - Y[i - 1]) : 0;
+      bb[0] = Math.min(bb[0], X[i]); bb[1] = Math.min(bb[1], Y[i]); bb[2] = Math.max(bb[2], X[i]); bb[3] = Math.max(bb[3], Y[i]);
+    }
+    return { X: X, Y: Y, S: S, len: S[n - 1], bb: bb };
+  }
+  function lineAt(Ln, u) {
+    var lo = 0, hi = Ln.S.length - 1;
+    u = u < 0 ? 0 : u > Ln.len ? Ln.len : u;
+    while (hi - lo > 1) { var m = (lo + hi) >> 1; if (Ln.S[m] <= u) lo = m; else hi = m; }
+    var seg = Ln.S[hi] - Ln.S[lo] || 1, t = (u - Ln.S[lo]) / seg;
+    return [Ln.X[lo] + (Ln.X[hi] - Ln.X[lo]) * t, Ln.Y[lo] + (Ln.Y[hi] - Ln.Y[lo]) * t, lo, hi];
+  }
+  function inPoly(P_, x, y) {
+    var c = false;
+    for (var i = 0, j = P_.length - 1; i < P_.length; j = i++) {
+      var a = P_[i], b = P_[j];
+      if ((a[1] > y) !== (b[1] > y) && x < (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]) + a[0]) c = !c;
+    }
+    return c;
+  }
+  /* uniform grid of placed boxes (screen px) */
+  function OvlGrid() { this.m = {}; }
+  OvlGrid.prototype.each = function (b, fn) {
+    var C = OVL.cell, x0 = Math.floor(b.x / C), x1 = Math.floor((b.x + b.w) / C), y0 = Math.floor(b.y / C), y1 = Math.floor((b.y + b.h) / C);
+    for (var cx = x0; cx <= x1; cx++) for (var cy = y0; cy <= y1; cy++) if (fn(cx + ':' + cy) === true) return true;
+    return false;
+  };
+  OvlGrid.prototype.add = function (b) { var m = this.m; this.each(b, function (k) { (m[k] || (m[k] = [])).push(b); }); };
+  OvlGrid.prototype.hitK = function (b, k) {
+    return this.hit(b) || (k !== 'art' && !!this.art && this.art.hit(b)) || (k === 'water' && !!this.land && this.land.hit(b));
+  };
+  OvlGrid.prototype.hit = function (b) {
+    var m = this.m, g = OVL.gap;
+    return this.each(b, function (k) {
+      var a = m[k]; if (!a) return;
+      for (var i = 0; i < a.length; i++) { var q = a[i]; if (b.x < q.x + q.w + g && q.x < b.x + b.w + g && b.y < q.y + q.h + g && q.y < b.y + b.h + g) return true; }
+    });
+  };
+
+  P.buildOvLabels = function () {
+    var LB = window.SALA_OV_LABELS, self = this;
+    if (!LB) return;
+    var L = this.layers.overview, layer = this.ovlEl = el('div', 'mm-ovl');
+    layer.setAttribute('aria-hidden', 'true');
+    L.el.insertBefore(layer, L.markersEl);
+    L.el.appendChild(el('div', 'mm-ovl-attrib', '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors'));
+    this.ovl = LB.items.map(function (it) {
+      var n = el('div', 'mm-ovl__t mm-ovl--' + it.k + (it.tone ? ' mm-ovl--' + it.tone : ''));
+      if (it.k === 'water') {
+        it.chars = Array.from(it.t).map(function (ch) { var sp = el('span', null, ch === ' ' ? ' ' : ch); n.appendChild(sp); return { el: sp, w: 0, tf: '' }; });
+      } else if (it.k === 'ward') n.innerHTML = '<small>Phường</small><b>' + it.t + '</b>';
+      else n.innerHTML = [].concat(it.t).join('<br>') + (it.sub ? '<i>' + it.sub + '</i>' : '');
+      layer.appendChild(n);
+      it.el = n; it.on = false; it.pl = null; it.tf = '';
+      if (it.lines) it.lines = it.lines.map(ovlLine);
+      else if (it.w) { it.iw = it.w; it.ih = it.h; }   /* the icon's box (map units); w/h become the label's own size */
+      return it;
+    });
+    var measure = function () {
+      self.ovl.forEach(function (it) {
+        it.w = it.el.offsetWidth; it.h = it.el.offsetHeight;
+        if (it.chars) it.chars.forEach(function (c) { c.w = c.el.offsetWidth; it.h = Math.max(it.h, c.el.offsetHeight); });
+      });
+      self.ovlReady = true; self.ovlLayout();
+    };
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(measure); else measure();
+  };
+
+  /* camera moved: follow at once (cheap), re-solve placement at most every ~110ms and once more when it settles */
+  P.ovlUpdate = function () {
+    if (!this.ovlReady) return;
+    var self = this;
+    this.ovlFollow();
+    clearTimeout(this.ovlSettle);
+    this.ovlSettle = setTimeout(function () { self.ovlLayout(); }, 140);
+    if (!this.ovlRaf && performance.now() - (this.ovlLast || 0) > 110) this.ovlRaf = requestAnimationFrame(function () { self.ovlLayout(); });
+  };
+
+  P.ovlLayout = function () {
+    this.ovlRaf = 0; this.ovlLast = performance.now();
+    if (!this.ovlReady || !this.fw) return;
+    var self = this, Lo = this.layers.overview, cam = Lo.cam, s = cam.s, tx = cam.tx, ty = cam.ty;
+    var z = s / (Lo.sDefault || s), vw = this.fw - (this.padRight || 0), vh = this.fh;
+    var grid = new OvlGrid(), fr = this.stage.getBoundingClientRect();
+    var view = { x0: 4, y0: 4, x1: vw - 4, y1: vh - 4 };
+    /* fixed obstacles: the UI chrome, the Sala pin, the hover road tag, and every icon on the map */
+    var tag = this.tags && this.tags.overview;
+    [this.controls, this.legend, this.modeEl, this.tabsEl, this.ptabs, this.frame.querySelector('.mm-header__logo'), this.salaPin, tag && tag.on ? tag.n : null,
+      Lo.el.querySelector('.mm-ovl-attrib')].forEach(function (n) {
+      if (!n) return;
+      var r = n.getBoundingClientRect();
+      if (r.width) grid.add({ x: r.left - fr.left - 4, y: r.top - fr.top - 4, w: r.width + 8, h: r.height + 8 });
+    });
+    this.ovlZone(s, tx, ty).forEach(function (b) { grid.add(b); });
+    /* the river name stays on water: keep it off the filled areas (gold centre, parks) */
+    var land = grid.land = new OvlGrid();
+    ovlStrips(this.ovl.filter(function (it) { return it.poly; }).map(function (it) { return it.poly; }), s, tx, ty).forEach(function (b) { land.add(b); });
+    /* the brown arterials: icon captions, wards and other roads keep off them (their own names sit beside them) */
+    var art = grid.art = new OvlGrid(), R = this.ovRoads || {}, aw = 5.2 * s + 4;
+    Object.keys(R).forEach(function (k) {
+      var o = R[k];
+      if (!o.pts) self.roadNearest('overview', o, { clientX: 0, clientY: 0 });
+      for (var i = 0; i < o.pts.length; i++) {
+        var X = o.pts[i][0] * s + tx, Y = o.pts[i][1] * s + ty;
+        if (X > -aw && Y > -aw && X < vw + aw && Y < vh + aw) art.add({ x: X - aw / 2, y: Y - aw / 2, w: aw, h: aw });
+      }
+    });
+    this.ovl.forEach(function (it) {
+      if (!it.iw) return;
+      var b = { x: (it.x - it.iw / 2) * s + tx, y: (it.y - it.ih / 2) * s + ty, w: it.iw * s, h: it.ih * s };
+      if (b.x < vw && b.y < vh && b.x + b.w > 0 && b.y + b.h > 0) grid.add(b);
+    });
+    var groups = {};
+    var order = this.ovl.slice().sort(function (a, b) { return (b.p + (b.on ? 8 : 0)) - (a.p + (a.on ? 8 : 0)); });
+    order.forEach(function (it) {
+      var want = z >= it.z * (it.on ? 0.9 : 1), pl = null;
+      if (want) {
+        if (it.lines) pl = it.k === 'water' ? self.ovlCurve(it, cam, view, grid, groups) : self.ovlPath(it, cam, view, grid);
+        else pl = self.ovlPoint(it, cam, view, grid);
+      }
+      if (pl) {
+        it.pl = pl;
+        pl.boxes.forEach(function (b) { grid.add(b); });
+        if (it.grp) (groups[it.grp] = groups[it.grp] || []).push(pl.c);
+      }
+      if (!!pl !== it.on) { it.on = !!pl; it.el.classList.toggle('is-on', it.on); }
+    });
+    this.ovlFollow();
+  };
+
+  /* the Sala zone's own outline (its SVG paths, sampled once into map space) as horizontal strips of screen boxes */
+  P.ovlZone = function (s, tx, ty) {
+    if (!this.salaZone) return [];
+    if (!this.ovlZonePolys) {
+      var z = D.overview.zone, svg = this.salaZone.querySelector('svg'), vb = svg.viewBox.baseVal;
+      this.ovlZonePolys = [].map.call(svg.querySelectorAll('path'), function (pa) {
+        var L = pa.getTotalLength(), n = Math.max(12, Math.ceil(L / 6)), out = [];
+        for (var i = 0; i < n; i++) { var q = pa.getPointAtLength(L * i / n); out.push([z.x + q.x / vb.width * z.w, z.y + q.y / vb.height * z.h]); }
+        return out;
+      });
+    }
+    return ovlStrips(this.ovlZonePolys, s, tx, ty);
+  };
+  function ovlStrips(polys, s, tx, ty) {
+    var boxes = [], ST = 10;
+    polys.forEach(function (P_) {
+      var sp = P_.map(function (p) { return [p[0] * s + tx, p[1] * s + ty]; }), y0 = Infinity, y1 = -Infinity;
+      sp.forEach(function (p) { y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); });
+      for (var y = y0; y < y1; y += ST) {
+        var a = Infinity, b = -Infinity, yb = Math.min(y + ST, y1);
+        for (var i = 0, j = sp.length - 1; i < sp.length; j = i++) {
+          var p = sp[i], q = sp[j];
+          if (p[1] >= y && p[1] <= yb) { a = Math.min(a, p[0]); b = Math.max(b, p[0]); }
+          [y, yb].forEach(function (yy) {
+            if ((p[1] > yy) !== (q[1] > yy)) { var x = p[0] + (q[0] - p[0]) * (yy - p[1]) / (q[1] - p[1]); a = Math.min(a, x); b = Math.max(b, x); }
+          });
+        }
+        if (b > a) boxes.push({ x: a, y: y, w: b - a, h: yb - y });
+      }
+    });
+    return boxes;
+  }
+  function boxIn(b, v) { return b.x >= v.x0 && b.y >= v.y0 && b.x + b.w <= v.x1 && b.y + b.h <= v.y1; }
+
+  /* point labels: centred (wards, areas) or one of 4 spots around their icon */
+  var OVL_SIDES = { below: [0, 1], above: [0, -1], right: [1, 0], left: [-1, 0], br: [1, 1], bl: [-1, 1], tr: [1, -1], tl: [-1, -1] };
+  P.ovlPoint = function (it, cam, view, grid) {
+    var s = cam.s, w = it.w, h = it.h, ax = it.x * s + cam.tx, ay = it.y * s + cam.ty;
+    if (it.k === 'ward' || it.k === 'area') {
+      var b = { x: ax - w / 2, y: ay - h / 2, w: w, h: h };
+      if (!boxIn(b, view) || grid.hitK(b, it.k)) return null;
+      if (it.poly) {   /* area name: only while the words fit inside the area */
+        var hx = (w / 2 + 6) / s, hy = (h / 2 + 4) / s, P_ = it.poly;
+        if (![[-1, -1], [1, -1], [1, 1], [-1, 1], [0, -1], [0, 1], [-1, 0], [1, 0]].every(function (q) { return inPoly(P_, it.x + q[0] * hx, it.y + q[1] * hy); })) return null;
+      }
+      return { mx: it.x, my: it.y, kx: 0, ky: 0, px: 0, py: 0, a: 0, al: 'c', boxes: [b] };
+    }
+    var order = [it.pref || 'below'], prev = it.on && it.pl && it.pl.side;
+    if (prev) order.unshift(prev);
+    /* icon captions stay square to their icon (a diagonal caption reads as its neighbour's); small marks may go diagonal */
+    (it.k === 'poi' || it.k === 'hub' ? ['below', 'right', 'left', 'above'] : ['right', 'left', 'below', 'above', 'br', 'bl', 'tr', 'tl']).forEach(function (d) { if (order.indexOf(d) < 0) order.push(d); });
+    var G_ = it.k === 'bridge' || it.k === 'junc' ? 3 : 4;
+    for (var i = 0; i < order.length; i++) {
+      var v = OVL_SIDES[order[i]];
+      if (!v) continue;
+      var kx = v[0] * it.iw / 2, ky = v[1] * it.ih / 2, px = v[0] * (G_ + w / 2), py = v[1] * (G_ + h / 2);
+      var cx = ax + kx * s + px, cy = ay + ky * s + py, bb = { x: cx - w / 2, y: cy - h / 2, w: w, h: h };
+      if (boxIn(bb, view) && !grid.hitK(bb, it.k))
+        return { mx: it.x, my: it.y, kx: kx, ky: ky, px: px, py: py, a: 0, side: order[i], al: v[0] > 0 ? 'l' : v[0] < 0 ? 'r' : 'c', boxes: [bb] };
+    }
+    return null;
+  };
+
+  /* straight chord of a line around arc position u: null if the line bends more than `tol` px under the label */
+  function ovlChord(Ln, u, half, s, tol) {
+    var a = lineAt(Ln, u - half), b = lineAt(Ln, u + half), dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy);
+    if (L < half * 1.8) return null;
+    var ux = dx / L, uy = dy / L;
+    for (var i = a[3]; i <= b[2]; i++) if (Math.abs((Ln.X[i] - a[0]) * uy - (Ln.Y[i] - a[1]) * ux) * s > tol) return null;
+    if (ux < -1e-3 || (Math.abs(ux) <= 1e-3 && uy > 0)) { ux = -ux; uy = -uy; }   /* keep text upright */
+    return { x: (a[0] + b[0]) / 2, y: (a[1] + b[1]) / 2, ux: ux, uy: uy };
+  }
+  function ovlVisible(Ln, s, tx, ty, v) {
+    var bb = Ln.bb;
+    if (bb[2] * s + tx < v.x0 || bb[0] * s + tx > v.x1 || bb[3] * s + ty < v.y0 || bb[1] * s + ty > v.y1) return null;
+    var u0 = Infinity, u1 = -Infinity;
+    for (var i = 0; i < Ln.X.length; i++) {
+      var X = Ln.X[i] * s + tx, Y = Ln.Y[i] * s + ty;
+      if (X > v.x0 && X < v.x1 && Y > v.y0 && Y < v.y1) { if (Ln.S[i] < u0) u0 = Ln.S[i]; if (Ln.S[i] > u1) u1 = Ln.S[i]; }
+    }
+    return u1 > u0 ? [u0, u1] : null;
+  }
+  function ovlCands(it, li, r, half, step) {
+    var pref = it.on && it.pl && it.pl.li === li ? it.pl.u : (r[0] + r[1]) / 2, c = [];
+    for (var u = r[0] + half; u <= r[1] - half; u += step) c.push(u);
+    if (pref >= r[0] + half && pref <= r[1] - half) c.push(pref);
+    return c.sort(function (a, b) { return Math.abs(a - pref) - Math.abs(b - pref); }).slice(0, 48);
+  }
+
+  /* road / transit names: on (or beside) the straightest visible stretch, upright */
+  P.ovlPath = function (it, cam, view, grid) {
+    var s = cam.s, tx = cam.tx, ty = cam.ty, w = it.w, h = it.h, tol = OVL.tol[it.k] || 2;
+    var half = (w / 2 + 4) / s, step = OVL.step / s;
+    var off = it.k === 'art' ? h / 2 + 2.6 * s + 2 : it.k === 'line' ? h / 2 + 2 : 0;   /* px from the centre line */
+    var idx = it.lines.map(function (_, i) { return i; });
+    if (it.on && it.pl) idx.sort(function (a, b) { return (b === it.pl.li) - (a === it.pl.li); });
+    for (var q = 0; q < idx.length; q++) {
+      var li = idx[q], Ln = it.lines[li];
+      if (Ln.len < 2 * half) continue;
+      var r = ovlVisible(Ln, s, tx, ty, view);
+      if (!r || r[1] - r[0] < 2 * half) continue;
+      var cands = ovlCands(it, li, r, half, step);
+      for (var k = 0; k < cands.length; k++) {
+        var ch = ovlChord(Ln, cands[k], half, s, tol);
+        if (!ch) continue;
+        var sides = off ? (it.on && it.pl && it.pl.side === -1 ? [-1, 1] : [1, -1]) : [0];
+        for (var j = 0; j < sides.length; j++) {
+          var nx = -ch.uy * off * sides[j], ny = ch.ux * off * sides[j];
+          var cx = ch.x * s + tx + nx, cy = ch.y * s + ty + ny, n = Math.max(1, Math.ceil(w / h)), boxes = [], ok = true;
+          for (var m = 0; m < n && ok; m++) {
+            var t = n === 1 ? 0 : -w / 2 + h / 2 + m * (w - h) / (n - 1);
+            var b = { x: cx + ch.ux * t - h / 2, y: cy + ch.uy * t - h / 2, w: h, h: h };
+            if (!boxIn(b, view) || grid.hitK(b, it.k)) ok = false; else boxes.push(b);
+          }
+          if (ok) return { mx: ch.x, my: ch.y, kx: 0, ky: 0, px: nx, py: ny, a: Math.atan2(ch.uy, ch.ux) * 180 / Math.PI, li: li, u: cands[k], side: sides[j], al: 'c', boxes: boxes };
+        }
+      }
+    }
+    return null;
+  };
+
+  /* river name: letter by letter along its curve (gentle bends only), repeats kept far apart */
+  P.ovlGlyphs = function (it, Ln, u, s, tx, ty) {
+    var W = 0; it.chars.forEach(function (c) { W += c.w; });
+    var a = lineAt(Ln, u - W / 2 / s), b = lineAt(Ln, u + W / 2 / s), rev = b[0] < a[0], dir = rev ? -1 : 1;
+    var pos = u - dir * W / 2 / s, out = [], prev = null, turn = 0;
+    for (var i = 0; i < it.chars.length; i++) {
+      var cw = it.chars[i].w / s, mid = pos + dir * cw / 2, p0 = lineAt(Ln, mid - dir * Math.max(cw, 4 / s)), p1 = lineAt(Ln, mid + dir * Math.max(cw, 4 / s));
+      var ang = Math.atan2(p1[1] - p0[1], p1[0] - p0[0]), pm = lineAt(Ln, mid);
+      if (prev != null) { var d = Math.abs(((ang - prev + 3 * Math.PI) % (2 * Math.PI)) - Math.PI); if (d > 0.4) return null; turn += d; }
+      prev = ang; out.push([pm[0] * s + tx, pm[1] * s + ty, ang * 180 / Math.PI]); pos += dir * cw;
+    }
+    return turn > 1.1 ? null : out;
+  };
+  P.ovlCurve = function (it, cam, view, grid, groups) {
+    var s = cam.s, tx = cam.tx, ty = cam.ty, W = 0, h = it.h;
+    it.chars.forEach(function (c) { W += c.w; });
+    var half = (W / 2 + 6) / s, step = 26 / s, near = groups[it.grp] || [];
+    for (var li = 0; li < it.lines.length; li++) {
+      var Ln = it.lines[li];
+      if (Ln.len < 2 * half) continue;
+      var r = ovlVisible(Ln, s, tx, ty, view);
+      if (!r || r[1] - r[0] < 2 * half) continue;
+      var cands = ovlCands(it, li, r, half, step);
+      for (var k = 0; k < cands.length; k++) {
+        var g = this.ovlGlyphs(it, Ln, cands[k], s, tx, ty);
+        if (!g) continue;
+        var c = g[g.length >> 1];
+        if (near.some(function (p) { return Math.hypot(p[0] - c[0], p[1] - c[1]) < OVL.rep; })) continue;
+        var boxes = [], ok = true;
+        for (var m = 0; m < g.length && ok; m++) {
+          var b = { x: g[m][0] - h / 2, y: g[m][1] - h / 2, w: h, h: h };
+          if (!boxIn(b, view) || grid.hitK(b, it.k)) ok = false; else boxes.push(b);
+        }
+        if (ok) return { li: li, u: cands[k], c: [c[0], c[1]], boxes: boxes };
+      }
+    }
+    return null;
+  };
+
+  /* every frame the camera moves: labels ride with the map (their spots are re-solved by ovlLayout) */
+  P.ovlFollow = function () {
+    if (!this.ovl) return;
+    var c = this.layers.overview.cam, s = c.s;
+    for (var i = 0; i < this.ovl.length; i++) {
+      var it = this.ovl[i], pl = it.pl;
+      if (!pl) continue;
+      if (it.chars) {
+        var g = this.ovlGlyphs(it, it.lines[pl.li], pl.u, s, c.tx, c.ty);
+        if (!g) continue;
+        for (var j = 0; j < g.length; j++) {
+          var ch = it.chars[j], t = 'translate(' + g[j][0].toFixed(1) + 'px,' + g[j][1].toFixed(1) + 'px) rotate(' + g[j][2].toFixed(1) + 'deg) translate(-50%,-50%)';
+          if (ch.tf !== t) { ch.tf = t; ch.el.style.transform = t; }
+        }
+        continue;
+      }
+      var x = (pl.mx + pl.kx) * s + c.tx + pl.px, y = (pl.my + pl.ky) * s + c.ty + pl.py;
+      var tf = pl.a ? 'translate(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px) rotate(' + pl.a.toFixed(1) + 'deg) translate(-50%,-50%)'
+        : 'translate(' + Math.round(x) + 'px,' + Math.round(y) + 'px) translate(-50%,-50%)';
+      if (it.tf !== tf) { it.tf = tf; it.el.style.transform = tf; }
+      if (it.al !== pl.al) { it.al = pl.al; it.el.setAttribute('data-al', pl.al); }
+    }
   };
 
   /* TOD plan: the four Figma layers stacked (base, arrows 5.4, transit icons 5.3, routes 5.2) */
@@ -580,18 +1034,19 @@
     var self = this, L = this.layers.master3d, c = L.canvas, W = MAPS.master3d.w, H = MAPS.master3d.h;
     /* Figma "Map" 49:7667 — depth: a muted, darker, top-blurred base image with the SALA core
        shown on top in full colour and full sharpness through a soft (85px-blurred) focus mask */
-    var img = el('img', 'mm-base mm-3d-base'); img.src = IMG + 'map-3d.jpg'; img.alt = 'Phối cảnh tổng thể Khu đô thị Sala'; img.draggable = false;
+    var img = el('img', 'mm-base mm-3d-base'); self.lazy(img, 'master3d', IMG + 'map-3d.webp'); img.alt = 'Phối cảnh tổng thể Khu đô thị Sala'; img.draggable = false;
     c.appendChild(img);
     /* progressive layer blur ~5.7px at the top fading out by 56% height (depth of field) */
-    var dof = el('img', 'mm-base mm-3d-base mm-dof'); dof.src = IMG + 'map-3d.jpg'; dof.alt = ''; dof.draggable = false;
+    var dof = el('img', 'mm-base mm-3d-base mm-dof'); self.lazy(dof, 'master3d', IMG + 'map-3d.webp'); dof.alt = ''; dof.draggable = false;
     c.appendChild(dof);
     c.appendChild(el('div', 'mm-3d-dim'));
-    var focus = el('img', 'mm-base mm-3d-focus'); focus.src = IMG + 'map-3d.jpg'; focus.alt = ''; focus.draggable = false;
+    var focus = el('img', 'mm-base mm-3d-focus'); self.lazy(focus, 'master3d', IMG + 'map-3d.webp'); focus.alt = ''; focus.draggable = false;
     c.appendChild(focus);
     c.appendChild(el('div', 'mm-softlight'));
 
     /* ---- one SVG in map space: spotlight, project zones, roads ---- */
     var svg = this.mSvg = svgEl('svg', { 'class': 'mm-msvg', width: W, height: H, viewBox: '0 0 ' + W + ' ' + H });
+    svg.__host = { app: this, map: 'master3d' };
     var defs = '<defs>' +
       /* Figma material (Vector 2392): fill #BC8E49→#564121 @60%, stroke #E1CFA6→transparent */
       '<linearGradient id="mmZoneFill" x1="0.5" y1="0" x2="0.5" y2="1"><stop stop-color="#BC8E49"/><stop offset="1" stop-color="#564121"/></linearGradient>' +
@@ -663,8 +1118,8 @@
       var cid = 'mmZC_' + p.id, clip = svgEl('clipPath', { id: cid });
       zs.forEach(function (z) { clip.appendChild(svgEl('path', { d: z.d })); });
       zDefs.appendChild(clip);
-      var lit = svgEl('image', { 'class': 'mm-zone-lit', href: IMG + 'map-3d-dusk.jpg', x: 0, y: 0, width: W, height: H, preserveAspectRatio: 'none', 'clip-path': 'url(#' + cid + ')' });
-      lit.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', IMG + 'map-3d-dusk.jpg');
+      var lit = svgEl('image', { 'class': 'mm-zone-lit', x: 0, y: 0, width: W, height: H, preserveAspectRatio: 'none', 'clip-path': 'url(#' + cid + ')' });
+      self.lazy(lit, 'master3d', IMG + 'map-3d-dusk.webp');
       g.appendChild(lit); fx.push(lit);
       zs.forEach(function (z, i) {
         var fid = 'mmZF_' + p.id + '_' + i, sid = 'mmZS_' + p.id + '_' + i;
@@ -730,16 +1185,18 @@
 
   P.buildAmenity = function () {
     var self = this, c = this.layers.amenity.canvas;
-    var img = el('img', 'mm-base mm-topview'); img.src = IMG + 'map-topview.jpg'; img.alt = 'Bản đồ tiện ích Khu đô thị Sala'; img.draggable = false;
+    var img = el('img', 'mm-base mm-topview'); self.lazy(img, 'amenity', IMG + 'map-topview.webp'); img.alt = 'Bản đồ tiện ích Khu đô thị Sala'; img.draggable = false;
     c.appendChild(img);
-    c.appendChild(el('div', 'mm-shade'));
+    /* the flat 30% black over the whole top-view is gone: only the screen-fixed bottom fade remains (.mm-bottomfade) */
     c.appendChild(el('div', 'mm-softlight'));
+    c.appendChild(el('div', 'mm-am-dim'));   /* dims the map while an amenity node is hovered / selected */
     D.amenities.forEach(function (a) {
       var b = el('button', 'mm-pin' + (a.featured ? ' mm-pin--featured' : ''));
       b.type = 'button';
       b.setAttribute('aria-label', a.name);
+      /* hover / keyboard focus: the amenity name rises above the node */
       b.innerHTML = '<span class="mm-pin__pulse"></span>' + icon(I.amenity[a.icon]) +
-        '';
+        '<span class="mm-pin__tip" aria-hidden="true">' + esc(a.name) + '</span>';
       b.addEventListener('click', function () { if (!self.suppress) self.select('amenity', a); });
       a._el = b;
       self.addMarker('amenity', b, a.x, a.y);
@@ -799,6 +1256,14 @@
   P.defaultCam = function (map) {
     var L = LAYOUTS[this.layout], c = L.cams[map];
     var k = Math.max(this.fw / L.dw, this.fh / L.dh), s = c[2] * k;
+    this.layers[map].sMax = s * 3.5;   /* zoom-in limit stays where the designed view put it */
+    if (map === 'master3d' || map === 'overview' || map === 'amenity') {
+      /* every map opens fully zoomed out (the whole map, feedback 02/11); zooming in is the visitor's choice */
+      var b = MAPS[map].bounds, w = this.fw - (this.padRight || 0);
+      s = Math.max(w / (b[2] - b[0]), this.fh / (b[3] - b[1]));
+      this.layers[map].sDefault = s;
+      return this.clampCam(map, { s: s, tx: w / 2 - (b[0] + b[2]) / 2 * s, ty: this.fh / 2 - (b[1] + b[3]) / 2 * s });
+    }
     this.layers[map].sDefault = s;
     return this.clampCam(map, { s: s, tx: this.fw / 2 - c[0] * s, ty: this.fh / 2 - c[1] * s });
   };
@@ -807,7 +1272,7 @@
     var b = MAPS[map].bounds, bw = b[2] - b[0], bh = b[3] - b[1];
     var fw = this.fw, fh = this.fh, pad = this.padRight;
     var minS = Math.max(fw / bw, fh / bh), sDef = this.layers[map].sDefault || minS;
-    var s = clamp(cam.s, minS, Math.max(sDef * 3.5, minS * 1.5));
+    var s = clamp(cam.s, minS, Math.max(this.layers[map].sMax || sDef * 3.5, minS * 1.5));
     var minTx = fw - pad - b[2] * s, maxTx = -b[0] * s;
     if (minTx > maxTx) minTx = maxTx = (fw - pad - (b[0] + b[2]) * s) / 2;
     var minTy = fh - b[3] * s, maxTy = -b[1] * s;
@@ -837,12 +1302,18 @@
     }
     if (this.hovered && map === this.active) this.placeCard();
     if (map === 'master3d') this.updateEdges();
+    if (map === 'overview') this.ovlUpdate();
     /* clouds sit above the map: they follow the camera at 60% speed (parallax) */
     if (map === this.active && this.cloud && !this.busy) {
-      var cc = this.centerOf(map, c), mm = Math.min(this.fw, this.fh) || 1;
-      this.cloud.u.panX = cc[0] * c.s / mm * 2.4 * 0.6;
-      this.cloud.u.panY = -cc[1] * c.s / mm * 2.4 * 0.6;
+      var pp = this.cloudPan(map, c);
+      this.cloud.u.panX = pp[0]; this.cloud.u.panY = pp[1];
     }
+  };
+
+  /* cloud parallax offset for a camera (clouds follow the map at 60%) */
+  P.cloudPan = function (map, c) {
+    var cc = this.centerOf(map, c), mm = Math.min(this.fw, this.fh) || 1;
+    return [cc[0] * c.s / mm * 2.4 * 0.6, -cc[1] * c.s / mm * 2.4 * 0.6];
   };
 
   /* bridge nodes that are outside the frame are pinned to the frame edge (with a direction arrow) */
@@ -861,11 +1332,15 @@
       if (r.width) placed.push({ x: r.left - fr.left, y: r.top - fr.top, w: r.width, h: r.height });
     });
     var DIRS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
+    var sectionCalm = this.mode === 'section' || this.mobile, sMin = (this.layers.master3d.sDefault || c.s) * 1.35;
     this.edgeEls.forEach(function (e) {
       if (!show) { if (e.on) { e.on = false; e.el.classList.remove('is-on'); } return; }
       var x = e.r.x * c.s + c.tx, y = e.r.y * c.s + c.ty;
       var cy = clamp(y, T, B), left = cy < ctlB ? ctlR : L, cx = clamp(x, left, R);
       e.off = cx !== x || cy !== y;
+      /* section (embed): calmer — a bridge node shows only once the visitor has zoomed in (≥ 1.35× the opening view)
+         and the bridge itself is in the frame; no nodes pinned to the edges. Page keeps the full behaviour. */
+      if (sectionCalm && (e.off || c.s < sMin)) { if (e.on) { e.on = false; e.el.classList.remove('is-on'); } return; }
       var pill = e.pill || (e.pill = e.el.querySelector('.mm-edge__pill')), dot = e.dot || (e.dot = e.el.querySelector('.mm-edge__dot'));
       var w = pill.offsetWidth || 120, h = pill.offsetHeight || 26;
       /* badge side: inward when pinned to an edge, otherwise the designer's side (dir); fall back to the others */
@@ -931,6 +1406,11 @@
   P.bind = function () {
     var self = this, stage = this.stage;
     this.root.addEventListener('click', function (e) {
+      /* "Xem chi tiết" with no page yet: a short notice instead of a dead link */
+      var cta = e.target.closest('.mm-cta');
+      if (cta && self.root.contains(cta) && (!cta.getAttribute('href') || cta.getAttribute('href') === '#')) {
+        e.preventDefault(); self.toast('Tính năng đang được phát triển'); return;
+      }
       var t = e.target.closest('[data-go],[data-act]');
       if (!t || !self.root.contains(t)) return;
       if (t.hasAttribute('data-go')) self.go(t.getAttribute('data-go'));
@@ -1032,12 +1512,14 @@
 
     stage.addEventListener('wheel', function (e) {
       if (self.busy) return;
+      var p = local(e), dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
+      /* plain mouse wheel zooms on both versions. In the embed, once the map can't zoom further that way
+         (fully zoomed out and still scrolling down, or at max zoom), the wheel goes back to scrolling the page */
       if (self.mode === 'section' && !(e.ctrlKey || e.metaKey)) {
-        self.showHint(IS_MAC ? 'Giữ ⌘ và cuộn để phóng to/thu nhỏ bản đồ' : 'Giữ Ctrl và cuộn để phóng to/thu nhỏ bản đồ');
-        return;
+        var c = self.layers[self.active].cam, lim = self.clampCam(self.active, { s: dy > 0 ? 1e-6 : 1e6, tx: 0, ty: 0 }).s;
+        if (Math.abs(c.s - lim) < 1e-3) return;
       }
       e.preventDefault();
-      var p = local(e), dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
       var pinch = e.ctrlKey && Math.abs(dy) < 40;
       self.zoomBy(Math.exp(-clamp(dy, -120, 120) * (pinch ? 0.012 : 0.0022)), p.x, p.y, false);
     }, { passive: false });
@@ -1085,6 +1567,7 @@
       if (this.hovered && this.hovered !== p) this.hoverProject(this.hovered, false);
       this.hovered = p;
       p._el.classList.add('is-hover');
+      this.layers.master3d.markersEl.classList.add('is-focusing');   /* other project flags turn grey while one is hovered */
       if (z) {
         this.spotHole.setAttribute('d', z.d);
         this.spotHole.setAttribute('transform', z.tr);
@@ -1096,6 +1579,7 @@
     } else {
       p._el.classList.remove('is-hover');
       if (this.hovered === p) this.hovered = null;
+      if (!this.hovered) this.layers.master3d.markersEl.classList.remove('is-focusing');
       if (sel === p) { this.hideCard(); return; }
       if (z) {
         G.to(z.fx, { opacity: 0, duration: 0.35, overwrite: true });
@@ -1199,11 +1683,29 @@
 
   /* ---------- reveals ---------- */
   P.reveal = function (map, delay) {
-    var d = delay || 0, L = this.layers[map].markersEl;
+    var d = delay || 0, L = this.layers[map].markersEl, self = this;
+    /* while the clouds still cover the frame, wait: the reveal plays as soon as the clearing opens (cloudsOut),
+       so nothing animates unseen and then pops in */
+    if (this.frame.classList.contains('is-clouded')) {
+      if (map === 'master3d') this.flagsHidden();
+      this._revealWait = map; return;
+    }
     if (map === 'master3d') {
-      var tags = L.querySelectorAll('.mm-proj__tag'), lines = L.querySelectorAll('.mm-proj__line');
-      G.fromTo(lines, { scaleY: 0, transformOrigin: '50% 100%' }, { scaleY: 1, duration: 0.7, stagger: 0.05, ease: 'power3.out', delay: d, clearProps: 'transform' });
-      G.fromTo(tags, { autoAlpha: 0, y: -12 }, { autoAlpha: 1, y: 0, duration: 0.6, stagger: 0.05, ease: 'back.out(1.8)', delay: d + 0.25, clearProps: 'transform' });
+      /* flags: each pole rises from its building, then the name unfurls from the pole like a flag;
+         they ripple out from the centre of the view, one after another */
+      var cam = this.layers.master3d.cam, cx = (this.fw - (this.padRight || 0)) / 2, cy = this.fh / 2;
+      var items = D.projects.filter(function (p) { return p._el; }).map(function (p) {
+        var dx = p.x * cam.s + cam.tx - cx, dy = p.y * cam.s + cam.ty - cy;
+        return { el: p._el, k: dx * dx + dy * dy };
+      }).sort(function (a, b) { return a.k - b.k; });
+      this.flagsHidden();
+      var tl = G.timeline({ delay: d });
+      items.forEach(function (it, i) {
+        var line = it.el.querySelector('.mm-proj__line'), tag = it.el.querySelector('.mm-proj__tag'), t = i * 0.09;
+        tl.to(line, { scaleY: 1, duration: 0.55, ease: 'power2.out', clearProps: 'transform' }, t)
+          .to(tag, { clipPath: 'inset(0% 0% 0% 0%)', duration: 0.6, ease: 'power3.out', clearProps: 'clipPath' }, t + 0.38)
+          .fromTo(tag, { color: 'rgba(255,254,242,0)' }, { color: 'rgba(255,254,242,1)', duration: 0.4, ease: 'none', clearProps: 'color' }, t + 0.55);
+      });
       G.fromTo(L.querySelectorAll('.mm-road'), { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.8, stagger: 0.04, delay: d + 0.4 });
       /* no road sweep on arrival: roads only light up when someone interacts with them */
     } else if (map === 'amenity') {
@@ -1221,10 +1723,40 @@
     }
   };
 
-  P.intro = function () {
-    this.reveal('overview', 0.3);
-    var u = this.cloud.u;
-    G.fromTo(u, { density: 0.9, edge: 0.4, scale: 1.6 }, { density: AMBIENT.overview.density, edge: 1, scale: 1, duration: 2.6, ease: 'power2.out', delay: 0.1 });
+  /* flags folded away (pole down, name rolled into the pole) — the starting state of the reveal */
+  P.flagsHidden = function () {
+    D.projects.forEach(function (p) {
+      if (!p._el) return;
+      var right = p._el.classList.contains('mm-proj--right');
+      G.set(p._el.querySelector('.mm-proj__line'), { scaleY: 0, transformOrigin: '50% 100%' });
+      G.set(p._el.querySelector('.mm-proj__tag'), { clipPath: right ? 'inset(0% 100% 0% 0%)' : 'inset(0% 0% 0% 100%)' });
+    });
+  };
+
+  /* first load: only the clouds and the spinning Sala logo until the map image is ready, then the clouds part.
+     No controls, tabs, legend, labels or nodes show while the clouds cover the frame (.mm-frame.is-clouded). */
+  P.intro = function (want) {
+    var self = this, u = this.cloud.u, map = want ? CONFIG.mapOf[want] : 'overview';
+    this.busy = true;
+    this.frame.classList.add('is-clouded');
+    G.set(u, { density: 1, edge: 0, alpha: 1, scale: 2.2, hole: 0 });
+    G.set(this.veil, { autoAlpha: this.cloud.ok ? 0.9 : 1 });   /* white cloud bed under the logo */
+    G.fromTo(this.loader, { autoAlpha: 0, scale: 0.6 }, { autoAlpha: 1, scale: 1, duration: 0.45, ease: 'back.out(2)', delay: 0.1, overwrite: 'auto' });
+    if (want) {
+      this.view = want; this.setTitle(want);
+      this.setCam(map, this.zoomedFrom(map, this.defaultCam(map), 1.3), true);
+      this.showLayer(map); this.updateChrome();
+    }
+    this.loadMap(map, true);
+    var img = this.layers[map].canvas.querySelector('img');
+    var ready = img && !img.complete ? new Promise(function (r) { img.addEventListener('load', r, { once: true }); img.addEventListener('error', r, { once: true }); }) : Promise.resolve();
+    return Promise.all([ready, new Promise(function (r) { setTimeout(r, 1300); })]).then(function () {
+      var tl = G.timeline();
+      setTimeout(function () { self.loadRest(); }, 600);
+      self.cloudsOut(tl, 0, map);
+      tl.add(function () { self.animateCam(map, self.defaultCam(map), 1.9, 'power3.out'); self.reveal(map, 0.5); }, 0);
+      return done(tl);
+    }).then(function () { G.set(self.loader, { autoAlpha: 0, scale: 0.6, overwrite: true }); self.busy = false; self.updateChrome(); if (self.showRotateHint) self.showRotateHint(); });
   };
 
   /* TOD plan layers come in one after another: routes wipe out from the centre, then icons, then arrows */
@@ -1242,20 +1774,29 @@
   /* ---------- clouds timeline pieces ---------- */
   /* close in: density rises while the features grow (we fly into the bank) */
   P.cloudsIn = function (tl, at) {
-    var u = this.cloud.u;
+    var u = this.cloud.u, self = this;
     tl.to(u, { edge: 0, alpha: 1, duration: 0.9, ease: 'sine.inOut' }, at)
       .to(u, { density: 1, duration: 1.15, ease: 'power2.inOut' }, at)
       .to(u, { scale: 2.2, duration: 1.25, ease: 'power1.in' }, at)
       .set(u, { hole: 0 }, at)
-      .to(this.veil, { autoAlpha: 0.55, duration: 0.5, ease: 'sine.in' }, at + 0.75);
+      .to(this.veil, { autoAlpha: 0.55, duration: 0.5, ease: 'sine.inOut' }, at + 0.55)   /* light white bed: a quick pass, no loading screen */
+      .add(function () { self.frame.classList.add('is-clouded'); }, at);           /* UI and nodes fade out with the clouds */
+    /* the spinning logo + full white bed belong to the first page load (intro); during map changes they appear
+       only if the new map really has to wait for its image (holdUntilLoaded) */
     if (!this.cloud.ok) tl.to(this.veil, { autoAlpha: 1, duration: 0.6 }, at + 0.4);
     return tl;
   };
   /* part: a clearing opens from the centre and the clouds sweep past the camera,
      then settle back into the ambient edge mist of the new map */
   P.cloudsOut = function (tl, at, map) {
-    var u = this.cloud.u, amb = AMBIENT[map || this.active] || AMBIENT.master3d;
-    tl.to(this.veil, { autoAlpha: 0, duration: 0.7, ease: 'sine.out' }, at)
+    var u = this.cloud.u, amb = AMBIENT[map || this.active] || AMBIENT.master3d, self = this;
+    tl.to(this.loader, { autoAlpha: 0, scale: 0.7, duration: 0.35, ease: 'power2.in', overwrite: 'auto' }, at)
+      .add(function () {   /* UI comes back once the clearing is open; a waiting reveal plays now */
+        self.frame.classList.remove('is-clouded'); self.frame.classList.remove('is-swapping');
+        var w = self._revealWait; self._revealWait = null;
+        if (w) self.reveal(w, 0.1);
+      }, at + 1.0)
+      .to(this.veil, { autoAlpha: 0, duration: 0.7, ease: 'sine.out' }, at)
       .to(u, { hole: 2.4, duration: 2.0, ease: 'power2.inOut' }, at)
       .to(u, { scale: 4.2, duration: 2.0, ease: 'power2.out' }, at)
       .to(u, { density: 0, duration: 1.3, ease: 'power1.in' }, at + 0.4)
@@ -1263,7 +1804,7 @@
         /* settle into the ambient mist without holding up the interaction */
         G.set(u, { hole: 0, scale: 1, edge: amb.edge, alpha: 0 });
         G.to(u, { density: amb.density, alpha: amb.alpha, duration: 1.6, ease: 'sine.inOut' });
-      }, at + 1.75);
+      }, at + 2.02);   /* after the hole/scale tweens (2.0 s) end — earlier, they overwrote the reset and the edge mist never came back */
     return tl;
   };
   P.ambient = function (map, dur) {
@@ -1283,13 +1824,49 @@
   };
 
   /* ---------- navigation ---------- */
+  /* clouds only on the very first load (intro); switching maps afterwards is a quick, simple crossfade (feedback 02/11).
+     dive / toOverview / switchTab (cloud transitions) are kept below but no longer used. */
   P.go = function (target) {
+    if (target === 'tod') target = 'urban';                         /* the 2D TOD plan is no longer shown */
     if (this.busy || target === this.view) return;
-    var v = this.view, fromOverview = v === 'overview' || v === 'tod';
-    if (target === 'overview') return this.toOverview();          /* from TOD plan or urban maps back to the location map */
-    if (target === 'tod') return this.dive('tod');                 /* SALA pin on the location map */
-    if (fromOverview) return this.dive(target);                    /* Tổng quan → Khu đô thị / Tiện ích: clouds */
-    return this.switchTab(target);                                 /* Khu đô thị ⇄ Tiện ích: quick crossfade */
+    return this.quickSwitch(target);
+  };
+
+  P.quickSwitch = async function (target) {
+    this.loadMap(CONFIG.mapOf[target] || target, true);   /* start fetching right away if it is still waiting */
+    if (this.ovHover) this.hoverOvRoad(this.ovHover, false);
+    if (this.rdHover) this.hoverRoad(this.rdHover, false);
+    this.busy = true;
+    this.deselect(true);
+    var self = this, map = CONFIG.mapOf[target], prev = this.active;
+    this.view = target;
+    this.setTitle(target);
+    this.updateChrome();
+    var def = this.defaultCam(map);
+    this.setCam(map, this.zoomedFrom(map, def, 1.3), true);
+    if (map === 'master3d') this.flagsHidden();
+    if (prev !== map) this.animateCam(prev, this.zoomedFrom(prev, this.layers[prev].cam, 1.2), 0.8, 'power2.in');
+    var u = this.cloud.u, pan = this.cloudPan(map, def), amb = AMBIENT[map] || AMBIENT.master3d, tl = G.timeline();
+    G.killTweensOf(u); G.killTweensOf(this.veil);
+    {
+      /* one transition everywhere (feedback 02/11), the first-load look: white clouds close in, the maps swap
+         underneath, then the clouds burst open from the centre. The spinning logo only shows if the new map's
+         image still has to load (holdUntilLoaded waits behind the clouds). */
+      G.to(u, { panX: pan[0], panY: pan[1], duration: 1.6, ease: 'sine.inOut' });
+      tl.add(function () { self.frame.classList.add('is-swapping'); }, 0)
+        .set(u, { hole: 0, sweep: 0, drift: 0 }, 0)
+        .to(u, { density: 1, edge: 0, alpha: 1, duration: 0.55, ease: 'sine.inOut' }, 0)
+        .to(u, { scale: 2.2, duration: 0.6, ease: 'sine.in' }, 0)
+        .to(this.veil, { autoAlpha: 0.9, duration: 0.45, ease: 'sine.inOut' }, 0.1)
+        .add(function () { self.showLayer(map); self._revealWait = map; if (map === 'master3d') self.flagsHidden(); }, 0.58)
+        .add(function () { self.animateCam(map, def, 1.9, 'power3.out'); }, 0.6);
+      this.holdUntilLoaded(tl, 0.58, map);
+      this.cloudsOut(tl, 0.6, map);
+      await new Promise(function (r) { tl.add(r, 1.75); });
+    }
+    if (prev !== map) { this.layers[prev].cam = this.defaultCam(prev); this.apply(prev); }
+    this.updateChrome();
+    this.busy = false;
   };
 
   P.dive = async function (target) {
@@ -1315,12 +1892,14 @@
       self.setCam(first, self.zoomedFrom(first, def, 1.4), true);
       self.showLayer(first);
     }, 1.3);
+    this.holdUntilLoaded(tl, 1.3, first);
     this.cloudsOut(tl, 1.35, first);
     tl.add(function () {
       self.animateCam(first, def, 1.9, 'power3.out');
       self._hideTabs = false; self.updateChrome();
       if (first === 'plan2d') self.revealPlan(0.6); else self.reveal(first, 0.5);
     }, 1.35);
+    if (this.mapLoaded(first)) tl.timeScale(2.1);   /* image already there: a quick cloud pass (~1.6 s) */
     await done(tl);
     G.set(this.salaPin, { autoAlpha: 1 });
     if (from !== first) { this.layers[from].cam = this.defaultCam(from); this.apply(from); }
@@ -1345,45 +1924,108 @@
       self.showLayer('overview');
       self.updateChrome();
     }, 1.15);
+    this.holdUntilLoaded(tl, 1.15, 'overview');
     this.cloudsOut(tl, 1.2, 'overview');
     tl.add(function () { self.animateCam('overview', def, 2.0, 'power3.out'); self.reveal('overview', 0.6); }, 1.2);
+    if (this.mapLoaded('overview')) tl.timeScale(2.1);
     await done(tl);
     this.layers[cur].cam = this.defaultCam(cur); this.apply(cur);
     this.busy = false;
   };
 
+  /* Khu đô thị ⇄ Tiện ích: also through the clouds (feedback 02/11) — quick when the map is already loaded,
+     held behind the clouds (with the spinning logo) until its image arrives when it isn't */
   P.switchTab = async function (target) {
     if (this.rdHover) this.hoverRoad(this.rdHover, false);
     this.busy = true;
     this.deselect(true);
-    var map = target === 'amenity' ? 'amenity' : 'master3d', prev = this.active;
+    var self = this, map = target === 'amenity' ? 'amenity' : 'master3d', prev = this.active;
     this.view = target;
     this.updateChrome();
-    var def = this.defaultCam(map);
-    this.setCam(map, this.zoomedFrom(map, def, 1.12), true);
-    this.animateCam(prev, this.zoomedFrom(prev, this.layers[prev].cam, 1.1), 0.9, 'power2.inOut');
-    this.showLayer(map, 0.8);
-    this.ambient(map, 1.2);
-    this.reveal(map, 0.35);
-    await done(this.animateCam(map, def, 1.3, 'power3.out'));
+    var def = this.defaultCam(map), quick = this.mapLoaded(map), tl = G.timeline();
+    tl.add(this.animateCam(prev, this.zoomedFrom(prev, this.layers[prev].cam, 1.3), 1.25, 'power2.in'), 0);
+    this.cloudsIn(tl, 0);
+    tl.add(function () { self.setCam(map, self.zoomedFrom(map, def, 1.3), true); self.showLayer(map); }, 1.15);
+    this.holdUntilLoaded(tl, 1.15, map);
+    this.cloudsOut(tl, 1.2, map);
+    tl.add(function () { self.animateCam(map, def, 1.9, 'power3.out'); self.reveal(map, 0.5); }, 1.2);
+    if (quick) tl.timeScale(2.1);
+    await done(tl);
     this.layers[prev].cam = this.defaultCam(prev); this.apply(prev);
     this.updateChrome();
     this.busy = false;
   };
 
+  /* map images ready? (all <img> of the map's canvas decoded) */
+  /* page speed (02/11): map images are only requested when needed. The map that opens first is fetched at high
+     priority on its own; the other maps follow one after another in the background once it is on screen, so on a
+     slow connection the first map no longer shares the bandwidth with ~2 MB of maps nobody is looking at yet. */
+  P.lazy = function (node, map, url) {
+    (this.pending[map] = this.pending[map] || []).push({ el: node, url: url });
+  };
+  P.loadMap = function (map, high) {
+    var list = this.pending[map];
+    if (!list) return;
+    delete this.pending[map];
+    list.forEach(function (it) {
+      if (it.el.tagName.toLowerCase() === 'img') {
+        if (high) it.el.setAttribute('fetchpriority', 'high');
+        it.el.src = it.url;
+      } else {
+        it.el.setAttribute('href', it.url);
+        it.el.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', it.url);
+      }
+    });
+  };
+  P.loadRest = function () {   /* the remaining maps, one at a time, after the first one is up */
+    var self = this, order = ['master3d', 'amenity', 'overview'].filter(function (k) { return self.pending[k]; });
+    (function next() {
+      var k = order.shift(); if (!k) return;
+      if (!self.pending[k]) return next();
+      self.loadMap(k);
+      self.mapReady(k).then(function () { setTimeout(next, 150); });
+    })();
+  };
+  P.mapLoaded = function (map) {
+    if (this.pending[map]) return false;
+    return [].every.call(this.layers[map].canvas.querySelectorAll('img'), function (im) { return im.complete && im.naturalWidth > 0; });
+  };
+  P.mapReady = function (map) {
+    this.loadMap(map, true);
+    return Promise.all([].map.call(this.layers[map].canvas.querySelectorAll('img'), function (im) {
+      if (im.complete) return null;
+      return new Promise(function (r) { im.addEventListener('load', r, { once: true }); im.addEventListener('error', r, { once: true }); });
+    }));
+  };
+  /* pause a cloud timeline at the swap point until the new map's image has loaded */
+  P.holdUntilLoaded = function (tl, at, map) {
+    /* feedback 02/11: the spinning logo only when the wait is long. The check runs when the clouds are closed
+       (not when the click happens), so an image that arrived meanwhile never pauses anything; a short wait
+       (< LOGO_DELAY) holds the clouds quietly, without the logo. */
+    var self = this, LOGO_DELAY = 600;
+    tl.add(function () {
+      if (self.mapLoaded(map)) return;
+      tl.pause(at + 0.01);   /* snap back exactly to the hold point */
+      var shown = false;
+      var timer = setTimeout(function () {
+        shown = true;
+        G.to(self.veil, { autoAlpha: 0.9, duration: 0.3 });
+        G.fromTo(self.loader, { autoAlpha: 0, scale: 0.6 }, { autoAlpha: 1, scale: 1, duration: 0.45, ease: 'back.out(2)', overwrite: 'auto' });
+      }, LOGO_DELAY);
+      Promise.race([self.mapReady(map), new Promise(function (r) { setTimeout(r, 10000); })]).then(function () {   /* never stuck */
+        clearTimeout(timer);
+        tl.resume();
+      });
+    }, at + 0.01);
+  };
+
+  /* "Về góc nhìn ban đầu": glide back to the opening view (no clouds) */
   P.reload = async function () {
     if (this.busy) return;
-    var self = this, map = this.active;
+    var map = this.active;
     this.busy = true;
     this.deselect(true);
-    var tl = G.timeline();
-    this.cloudsIn(tl, 0);
-    tl.to(this.loader, { autoAlpha: 1, scale: 1, duration: 0.45, ease: 'back.out(2)' }, 0.75)
-      .add(function () { self.setCam(map, self.zoomedFrom(map, self.defaultCam(map), 1.25), true); }, 1.2)
-      .to(this.loader, { autoAlpha: 0, scale: 0.7, duration: 0.35, ease: 'power2.in' }, 2.05);
-    this.cloudsOut(tl, 2.1, map);
-    tl.add(function () { self.animateCam(map, self.defaultCam(map), 1.6, 'power3.out'); self.reveal(map, 0.3); if (map === 'plan2d') self.revealPlan(0.3); }, 2.1);
-    await done(tl);
+    await done(this.animateCam(map, this.defaultCam(map), 0.9, 'power3.inOut'));
     this.busy = false;
   };
 
@@ -1465,15 +2107,16 @@
     var title = d ? d.title : item.name;
     var html = '<h3 class="mm-panel__title">' + esc(title) + '</h3>';
     if (d) {
+      /* one rule for every popover (feedback 02/11): label on the left, value on the right; stats are [label, value] */
       var stats = d.stats.map(function (s) {
-        return '<div class="mm-stat">' + (d.statsValueFirst
-          ? '<span class="v">' + esc(s[0]) + '</span><span class="k">' + esc(s[1]) + '</span>'
-          : '<span class="k">' + esc(s[0]) + '</span><span class="v">' + esc(s[1]) + '</span>') + '</div>';
+        return '<div class="mm-stat"><span class="k">' + esc(s[0]) + '</span><span class="v">' + esc(s[1]) + '</span></div>';
       }).join('');
-      var thumbs = d.gallery.map(function (g, i) { return '<button type="button" data-src="' + g + '" aria-label="Ảnh ' + (i + 1) + '"><img src="' + g + '" alt="" loading="lazy"></button>'; }).join('');
+      /* gallery items: a path, or { src, thumb } (small copy in the strip, full size in the viewer) */
+      var thumbs = d.gallery.map(function (g, i) { var full = g.src || g, th = g.thumb || full;
+        return '<button type="button" class="mm-skel" data-src="' + full + '" aria-label="Xem ảnh ' + (i + 1) + '"><img src="' + th + '" alt="" loading="lazy"></button>'; }).join('');
       var cta = '<a class="mm-cta" href="' + (d.href || '#') + '">' + esc(d.cta) + icon(I.arrowRight) + '</a>';
       html = '<div class="mm-col mm-col--a">' + html +
-        '<div class="mm-panel__media"><img src="' + d.image + '" alt="' + esc(title) + '"></div>' +
+        '<div class="mm-panel__media mm-skel"><img src="' + d.image + '" alt="' + esc(title) + '"></div>' +
         '<p class="mm-panel__desc">' + esc(d.desc) + '</p></div>' +
         '<div class="mm-col mm-col--b"><div class="mm-acc"><button type="button" class="mm-acc__head" aria-expanded="true">Thông tin chung' + icon(I.chevron) + '</button>' +
         '<div class="mm-acc__body"><div class="mm-acc__inner">' + stats + '</div></div></div>' +
@@ -1489,21 +2132,132 @@
     }
     body.innerHTML = html;
     if (!d) return;
+    /* skeleton (feedback 02/11): a shimmering placeholder in the image frames until each picture has loaded,
+       instead of an empty grey box; the picture then fades in */
+    body.querySelectorAll('.mm-skel img').forEach(function (im) {
+      var box = im.parentNode;
+      function done() { box.classList.add('is-loaded'); }
+      if (im.complete && im.naturalWidth) done();
+      else { im.addEventListener('load', done, { once: true }); im.addEventListener('error', done, { once: true }); }
+    });
     var acc = body.querySelector('.mm-acc');
     acc.querySelector('.mm-acc__head').addEventListener('click', function () { var closed = acc.classList.toggle('is-closed'); this.setAttribute('aria-expanded', !closed); });
-    var track = body.querySelector('.mm-gal__track'), media = body.querySelector('.mm-panel__media img');
-    var btns = track.querySelectorAll('button'), idx = -1;
-    function show(i) {
-      idx = (i + btns.length) % btns.length;
-      btns.forEach(function (b, j) { b.classList.toggle('is-current', j === idx); });
-      var src = btns[idx].getAttribute('data-src');
-      G.to(media, { autoAlpha: 0, duration: 0.2, onComplete: function () { media.src = src; G.fromTo(media, { autoAlpha: 0, scale: 1.06 }, { autoAlpha: 1, scale: 1, duration: 0.6 }); } });
-      var b = btns[idx];
-      track.scrollTo({ left: Math.max(0, b.offsetLeft - track.offsetLeft - (track.clientWidth - b.offsetWidth) / 2), behavior: 'smooth' });
+    /* gallery: thumbnails open a full-screen viewer (the panel image stays as it is); ‹ › scroll the strip */
+    var track = body.querySelector('.mm-gal__track'), self = this;
+    var btns = track.querySelectorAll('button'), srcs = [].map.call(btns, function (b) { return b.getAttribute('data-src'); });
+    btns.forEach(function (b, i) { b.addEventListener('click', function () { self.openViewer(srcs, i, title); }); });
+    function page(dir) { track.scrollBy({ left: dir * track.clientWidth, behavior: 'smooth' }); }
+    body.querySelector('.mm-gal__nav .prev').addEventListener('click', function () { page(-1); });
+    body.querySelector('.mm-gal__nav .next').addEventListener('click', function () { page(1); });
+  };
+
+  /* ---------- toast: short notice at the top of the map ---------- */
+  P.toast = function (msg) {
+    var t = this.toastEl;
+    if (!t) { t = this.toastEl = el('div', 'mm-toast'); t.setAttribute('role', 'status'); t.setAttribute('aria-live', 'polite'); this.root.appendChild(t); }
+    t.innerHTML = '<svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true"><circle cx="9" cy="9" r="7.5" stroke="currentColor" stroke-width="1.4"/><path d="M9 8v4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="9" cy="5.4" r=".9" fill="currentColor"/></svg>' +
+      '<span>' + esc(msg) + '</span>';
+    clearTimeout(this.toastT);
+    G.fromTo(t, { autoAlpha: 0, y: -12 }, { autoAlpha: 1, y: 0, duration: 0.35, ease: 'power3.out', overwrite: true });
+    this.toastT = setTimeout(function () { G.to(t, { autoAlpha: 0, y: -8, duration: 0.3, ease: 'power1.in', overwrite: true }); }, 2600);
+  };
+
+  /* ---------- image viewer (lightbox) ---------- */
+  P.openViewer = function (srcs, i, title) {
+    var self = this, v = this.viewer;
+    if (!v) {
+      v = this.viewer = el('div', 'mm-viewer');
+      v.setAttribute('role', 'dialog'); v.setAttribute('aria-modal', 'true'); v.setAttribute('aria-hidden', 'true');
+      v.innerHTML = '<div class="mm-viewer__top"><span class="mm-viewer__title"></span><span class="mm-viewer__count"></span>' +
+        '<button type="button" class="mm-viewer__close" aria-label="Đóng">' + icon(I.close) + '</button></div>' +
+        '<div class="mm-viewer__stage"><img alt=""></div>' +
+        '<button type="button" class="mm-viewer__nav prev" aria-label="Ảnh trước">' + icon(I.chevron) + '</button>' +
+        '<button type="button" class="mm-viewer__nav next" aria-label="Ảnh sau">' + icon(I.chevron) + '</button>' +
+        '<div class="mm-viewer__strip"></div>';
+      this.root.appendChild(v);
+      G.set(v, { autoAlpha: 0 });
+      v.querySelector('.mm-viewer__close').addEventListener('click', function () { self.closeViewer(); });
+      v.querySelector('.prev').addEventListener('click', function () { self.viewerGo(-1); });
+      v.querySelector('.next').addEventListener('click', function () { self.viewerGo(1); });
+      v.addEventListener('click', function (e) { if (e.target === v || e.target.classList.contains('mm-viewer__stage')) self.closeViewer(); });
+      document.addEventListener('keydown', function (e) {
+        if (!self.viewerOn) return;
+        if (e.key === 'Escape') { e.stopPropagation(); self.closeViewer(); }
+        if (e.key === 'ArrowLeft') self.viewerGo(-1);
+        if (e.key === 'ArrowRight') self.viewerGo(1);
+      }, true);
+      var x0 = null;   /* swipe on touch */
+      v.addEventListener('touchstart', function (e) { x0 = e.touches[0].clientX; }, { passive: true });
+      v.addEventListener('touchend', function (e) { if (x0 == null) return; var dx = e.changedTouches[0].clientX - x0; if (Math.abs(dx) > 40) self.viewerGo(dx < 0 ? 1 : -1); x0 = null; });
     }
-    btns.forEach(function (b, i) { b.addEventListener('click', function () { show(i); }); });
-    body.querySelector('.mm-gal__nav .prev').addEventListener('click', function () { show(idx < 0 ? btns.length - 1 : idx - 1); });
-    body.querySelector('.mm-gal__nav .next').addEventListener('click', function () { show(idx + 1); });
+    this.viewerSrcs = srcs;
+    v.querySelector('.mm-viewer__title').textContent = title || '';
+    var ths = this.viewerThumbs = [].map.call(this.panel.querySelectorAll('.mm-gal__track img'), function (im) { return im.getAttribute('src'); });
+    v.querySelector('.mm-viewer__strip').innerHTML = srcs.map(function (s, k) { return '<button type="button" aria-label="Ảnh ' + (k + 1) + '"><img src="' + (ths[k] || s) + '" alt=""></button>'; }).join('');
+    v.querySelectorAll('.mm-viewer__strip button').forEach(function (b, k) { b.addEventListener('click', function () { self.viewerShow(k); }); });
+    v.classList.toggle('is-single', srcs.length < 2);
+    this.viewerShow(i, true);
+    this.viewerOn = true; this.viewerFocus = document.activeElement;
+    v.setAttribute('aria-hidden', 'false');
+    G.to(v, { autoAlpha: 1, duration: 0.3, ease: 'power1.out', overwrite: true });
+    G.fromTo(v.querySelector('.mm-viewer__stage img'), { scale: 0.94 }, { scale: 1, duration: 0.5, ease: 'power3.out' });
+    v.querySelector('.mm-viewer__close').focus({ preventScroll: true });
+  };
+  P.viewerShow = function (i, instant) {
+    /* feedback 02/11 "bấm đổi ảnh nhưng ảnh không đổi": on a slow connection the browser kept the old picture on
+       screen until the new full-size file arrived. Now a click changes the picture at once: the (already loaded)
+       thumbnail is shown softly blurred in the same fixed 16:9 frame, then the full image replaces it as soon
+       as it is decoded. The pictures next to it are preloaded. */
+    var self = this, v = this.viewer, n = this.viewerSrcs.length, img = v.querySelector('.mm-viewer__stage img');
+    this.viewerIdx = (i + n) % n;
+    var idx = this.viewerIdx, src = this.viewerSrcs[idx], th = (this.viewerThumbs || [])[idx];
+    var tok = this.viewerTok = (this.viewerTok || 0) + 1;
+    var cache = this.viewerCache || (this.viewerCache = {});
+    v.querySelector('.mm-viewer__count').textContent = (idx + 1) + ' / ' + n;
+    var cur = null;
+    v.querySelectorAll('.mm-viewer__strip button').forEach(function (b, k) { var on = k === idx; b.classList.toggle('is-current', on); if (on) cur = b; });
+    if (cur) cur.scrollIntoView({ block: 'nearest', inline: 'center', behavior: instant ? 'auto' : 'smooth' });
+
+    function load(u) {
+      if (!cache[u]) cache[u] = new Promise(function (r) {
+        var im = new Image(); im.decoding = 'async';
+        im.onload = function () { (im.decode ? im.decode() : Promise.resolve()).catch(function () {}).then(function () { r(im); }); };
+        im.onerror = function () { r(null); };
+        im.src = u;
+      });
+      return cache[u];
+    }
+    function showFull(im) {
+      if (tok !== self.viewerTok) return;
+      img.src = src;
+      img.classList.remove('is-lowres');
+    }
+    function show() {
+      var ready = cache[src] && cache[src].done;
+      if (ready) { showFull(ready); return; }
+      if (th) {   /* instant placeholder: the thumbnail (the 16:9 frame keeps the size, see CSS) */
+        img.src = th; img.classList.add('is-lowres');
+      }
+    }
+    var p = load(src);
+    p.then(function (im) { p.done = im || true; showFull(im); });
+    /* preload the neighbours so the next click is instant */
+    p.then(function () { [idx + 1, idx - 1].forEach(function (k) { var u = self.viewerSrcs[(k + n) % n]; load(u).then(function (im) { cache[u].done = im || true; }); }); });
+
+    if (instant) { show(); return; }
+    G.to(img, { autoAlpha: 0, duration: 0.12, overwrite: true, onComplete: function () {
+      if (tok !== self.viewerTok) return;
+      show(); G.fromTo(img, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.3 });
+    } });
+  };
+  P.viewerGo = function (d) { if (this.viewerOn && this.viewerSrcs.length > 1) this.viewerShow(this.viewerIdx + d); };
+  P.closeViewer = function () {
+    if (!this.viewerOn) return;
+    var v = this.viewer;
+    this.viewerOn = false;
+    v.setAttribute('aria-hidden', 'true');
+    G.to(v, { autoAlpha: 0, duration: 0.25, ease: 'power1.in', overwrite: true });
+    if (this.viewerFocus && this.viewerFocus.focus) this.viewerFocus.focus({ preventScroll: true });
   };
 
   /* ---------- boot ---------- */
