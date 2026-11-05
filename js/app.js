@@ -410,7 +410,7 @@
       this.titleEl = el('h2', 'mm-title');
       this.setTitle('overview', true);
       head.appendChild(this.titleEl);
-      head.appendChild(el('p', 'mm-desc', esc(D.description)));
+      head.appendChild(this.descEl = el('p', 'mm-desc', esc(D.descriptions.overview)));
       root.appendChild(head);
       /* the outer "Bản đồ tổng quan / Bản đồ khu đô thị" switch is gone: the embed uses the same single
          3-tab bar as the full page (feedback 02/11), placed inside the map */
@@ -1289,7 +1289,7 @@
     (D.landmarks || []).forEach(function (p) {
       var n = el('div', 'mm-road mm-road--up mm-road--gold mm-landmark', '<span class="mm-road__pill"></span><span class="mm-road__line"></span><span class="mm-road__dot"></span>');
       n.querySelector('.mm-road__pill').textContent = p.name;
-      n._len = 16;   /* v10.5: shorter leader so the tag sits lower (stays in frame when the top is cropped) */
+      n._len = 20;   /* v11.0: 20 px leader (v10.5 had 16, too short) */
       n.addEventListener('pointerenter', function (e) { if (e.pointerType !== 'touch') self.hoverProject(p, true); });
       n.addEventListener('pointerleave', function (e) { if (e.pointerType !== 'touch') self.hoverProject(p, false); });
       n.addEventListener('click', function () { if (!self.suppress) self.hoverProject(p, !(self.hovered === p)); });
@@ -1429,6 +1429,8 @@
       this.layers[map].sDefault = s;
       /* v10.5: on the 3D maps the opening view keeps the bottom edge (marina) in frame; any crop comes off the top */
       var ty = (map === 'master3d' || map === 'amenity') ? this.fh - b[3] * s : this.fh / 2 - (b[1] + b[3]) / 2 * s;
+      /* v11.0: …but never so far that an always-on landmark tag (pill 26 + leader 20 + 8 px margin) leaves the top edge */
+      if (map === 'master3d') (D.landmarks || []).forEach(function (l) { ty = Math.max(ty, 54 * (this.lineScale || 1) + 8 - l.y * s); }, this);
       return this.clampCam(map, { s: s, tx: w / 2 - (b[0] + b[2]) / 2 * s, ty: ty });
     }
     this.layers[map].sDefault = s;
@@ -1576,7 +1578,7 @@
       /* "Xem chi tiết" with no page yet: a short notice instead of a dead link */
       var cta = e.target.closest('.mm-cta');
       if (cta && self.root.contains(cta) && (!cta.getAttribute('href') || cta.getAttribute('href') === '#')) {
-        e.preventDefault(); self.toast('Tính năng đang được phát triển'); return;
+        e.preventDefault(); self.toast(cta.getAttribute('data-toast') || 'Tính năng đang được phát triển'); return;
       }
       var t = e.target.closest('[data-go],[data-act]');
       if (!t || !self.root.contains(t)) return;
@@ -1840,7 +1842,12 @@
     if (!this.titleEl) return;
     var t = D.titles[view === 'overview' ? 'overview' : 'urban'], node = this.titleEl;  /* TOD plan uses the second title, as in Figma */
     var html = '<span class="ln">' + esc(t[0]) + '</span><span class="ln accent">' + esc(t[1]) + '</span>';
-    if (instant) { node.innerHTML = html; return; }
+    var dsc = D.descriptions[view === 'overview' ? 'overview' : 'urban'], de = this.descEl;
+    if (instant) { node.innerHTML = html; if (de) de.textContent = dsc; return; }
+    if (de && de.textContent !== dsc) G.timeline()
+      .to(de, { autoAlpha: 0, y: -6, duration: 0.3, ease: 'power2.in' })
+      .add(function () { de.textContent = dsc; })
+      .to(de, { autoAlpha: 1, y: 0, duration: 0.5, ease: 'power3.out' });
     if (node.innerHTML === html) return;
     G.timeline()
       .to(node.querySelectorAll('.ln'), { yPercent: -40, autoAlpha: 0, duration: 0.35, stagger: 0.06, ease: 'power2.in' })
@@ -2289,7 +2296,9 @@
       /* gallery items: a path, or { src, thumb } (small copy in the strip, full size in the viewer) */
       var thumbs = d.gallery.map(function (g, i) { var full = g.src || g, th = g.thumb || full;
         return '<button type="button" class="mm-skel" data-src="' + full + '" aria-label="Xem ảnh ' + (i + 1) + '"><img src="' + th + '" alt="" loading="lazy"></button>'; }).join('');
-      var cta = '<a class="mm-cta" href="' + (d.href || '#') + '">' + esc(d.cta) + icon(I.arrowRight) + '</a>';
+      /* v11.2: until the real pages exist, each CTA says where it will go */
+      var ctaToast = kind === 'project' ? 'Điều hướng trang chi tiết dự án' : 'Điều hướng trang chi tiết tiện ích';
+      var cta = '<a class="mm-cta" href="' + (d.href || '#') + '" data-toast="' + ctaToast + '">' + esc(d.cta) + icon(I.arrowRight) + '</a>';
       html = '<div class="mm-col mm-col--a">' + html +
         '<div class="mm-panel__media mm-skel"><img src="' + d.image + '" alt="' + esc(title) + '"></div>' +
         '<p class="mm-panel__desc">' + esc(d.desc) + '</p></div>' +
@@ -2303,7 +2312,11 @@
       foot.innerHTML = cta; foot.style.display = '';
     } else if (kind === 'project' && item.thumb) {
       /* v9.9 (feedback 05/11): no content yet → status, name, thumbnail and "Đăng kí nhận thông tin" only */
-      var reg = '<a class="mm-cta" href="' + (item.registerHref || '#') + '">Đăng kí nhận thông tin' + icon(I.arrowRight) + '</a>';
+      /* v11.2: Chưa mở bán → "Đăng kí nhận thông tin" (form page); Đang / Sắp mở bán → "Xem chi tiết dự án" (detail page) */
+      var closed = (item.status || 'closed') === 'closed';
+      var reg = closed
+        ? '<a class="mm-cta" href="' + (item.registerHref || '#') + '" data-toast="Điều hướng trang form đăng kí">Đăng kí nhận thông tin' + icon(I.arrowRight) + '</a>'
+        : '<a class="mm-cta" href="' + (item.href || '#') + '" data-toast="Điều hướng trang chi tiết dự án">Xem chi tiết dự án' + icon(I.arrowRight) + '</a>';
       html = '<div class="mm-col mm-col--a">' + html +
         '<div class="mm-panel__media mm-skel"><img src="' + item.thumb + '" alt="' + esc(title) + '"></div></div>' +
         '<div class="mm-col mm-col--b">' + reg.replace('class="mm-cta"', 'class="mm-cta mm-cta-inline"') + '</div>';

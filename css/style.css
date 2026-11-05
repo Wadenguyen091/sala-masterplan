@@ -843,7 +843,7 @@ img { display: block; }
 
 /* v9.8 project panel header = sales status (Figma 28422:16102 / 16114 / 16126) */
 .mm-panel__kind[data-status="open"] { color: #2f806c; }
-.mm-panel__kind[data-status="soon"] { color: #5276b8; }
+.mm-panel__kind[data-status="soon"] { color: #bc8e49; }   /* v11.1: Sắp mở bán in Sala gold (Hyun; was info blue #5276B8) */
 .mm-panel__kind[data-status="closed"] { color: #c94b4b; }
 
 /* v9.9 short project panel: on phones the bottom sheet hugs its content instead of 82% of the screen */

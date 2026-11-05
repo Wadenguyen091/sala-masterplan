@@ -7,7 +7,11 @@ window.SALA_DATA = {
     overview: ['SALA - Tâm điểm kết nối', 'TOD tại Thủ Thiêm'],
     urban: ['Dòng chảy kết nối', 'Trải nghiệm nâng tầm']
   },
-  description: 'Là tâm điểm tài chính - văn hóa mới, Thủ Thiêm đang bứt phá mạnh mẽ nhờ hạ tầng chiến lược và mạng lưới Metro TOD. Trong bức tranh đó, Khu đô thị Sala dần hoàn thiện hệ sinh thái đa kết nối, thiết lập chuẩn mực phát triển bền vững cho toàn khu vực.',
+  /* the intro text under the title follows the view, like the title (v11.3) */
+  descriptions: {
+    overview: 'Là tâm điểm tài chính - văn hóa mới, Thủ Thiêm đang bứt phá mạnh mẽ nhờ hạ tầng chiến lược và mạng lưới Metro TOD. Trong bức tranh đó, Khu đô thị Sala dần hoàn thiện hệ sinh thái đa kết nối, thiết lập chuẩn mực phát triển bền vững cho toàn khu vực.',
+    urban: 'Sala mở ra những kết nối liền mạch với thành phố, đồng thời liên kết các dự án và tiện ích trong một hệ sinh thái sống thống nhất. Khám phá những kết nối tạo nên nhịp sống Sala.'
+  },
 
   /* Overview (location) map: Sala zone + pin */
   overview: {
@@ -33,10 +37,7 @@ window.SALA_DATA = {
      dashed route at rest. Metro 1: Bến Thành → Ba Son → Landmark 81 → Xa lộ Hà Nội. Metro 2: Bến Thành → Thủ Thiêm. */
   /* Overview: named areas that light up on hover (v9.3). Outline traced from the gold block printed on the
      v8.4 artwork (colour fill, spurs from the bridge symbols opened away), in map space. */
-  overviewAreas: [
-    { id: 'tthc', name: 'Trung tâm hành chính - tài chính mới TP.HCM',
-      d: 'M 723.5 764.1 L 723.1 761.6 L 703.1 723.0 L 702.7 719.4 L 700.2 717.2 L 686.4 689.2 L 684.2 688.1 L 638.7 698.6 L 622.3 705.9 L 606.0 716.8 L 599.1 723.4 L 598.7 726.3 L 600.9 729.5 L 600.9 732.8 L 594.3 732.8 L 591.0 734.3 L 582.3 750.3 L 579.4 752.8 L 580.5 755.7 L 588.1 760.8 L 595.0 763.0 L 626.3 779.8 L 627.8 781.9 L 633.6 783.0 L 642.3 788.5 L 660.5 797.2 L 663.1 796.1 L 670.4 787.0 L 682.4 778.7 L 699.8 771.4 L 722.4 765.6 Z' }
-  ],
+  overviewAreas: [],   /* v11.4: the Trung tâm hành chính hover on the overview was removed (Hyun); it stays on the 3D map */
 
   overviewTransit: [
     { id: 'metro-1', kind: 'metro', name: 'Metro 1', color: '#765038', dash: '7 13', dur: 7,
@@ -83,7 +84,7 @@ window.SALA_DATA = {
      label (pill + leader + dot, dot at x, y); hovering the label or the outline lights the outline like a project.
      No popover (no content). The outline is projectZones[zone]. */
   landmarks: [
-    { id: 'tthc-3d', name: 'Trung tâm Hành chính TP.HCM', x: 906.3, y: 168, zone: 'tthc-3d' }   /* v10.5: anchor moved down onto the middle of the block (Figma 138.9) */
+    { id: 'tthc-3d', name: 'Trung tâm Hành chính TP.HCM', x: 906.3, y: 140, zone: 'tthc-3d' }   /* v11.0: leader ends on the top of the tallest tower (Figma 138.9) */
   ],
 
   /* 3D master map: building outlines (v9.0): the Figma vectors behind each label in 28407:14051, converted to map space
@@ -201,7 +202,7 @@ window.SALA_DATA = {
         stats: [['Quy mô khuôn viên', '20.000 m²'], ['Sức chứa tối đa', '20.000 người'], ['Không gian chức năng', '05 tầng'], ['Giờ hoạt động dự kiến', '08:00 – 21:00']],
         /* renders from the client (02/11) */
         gallery: [{ src: 'assets/img/cung-van-hoa/01.webp', thumb: 'assets/img/cung-van-hoa/01-t.webp' }, { src: 'assets/img/cung-van-hoa/02.webp', thumb: 'assets/img/cung-van-hoa/02-t.webp' }, { src: 'assets/img/cung-van-hoa/03.webp', thumb: 'assets/img/cung-van-hoa/03-t.webp' }, { src: 'assets/img/cung-van-hoa/04.webp', thumb: 'assets/img/cung-van-hoa/04-t.webp' }],
-        cta: 'Xem chi tiết tiện ích', href: '#'
+        cta: 'Xem chi tiết tiện ích', href: '#'   /* toast until the page exists: "Điều hướng trang chi tiết tiện ích" */
       } },
     { id: 'gio-hang-1', icon: 'gio-hang', name: 'Chuỗi TTTM Chủ Đề Kết Hợp Showroom', x: 984.8, y: 338.3 },
     { id: 'toa-nha-1', icon: 'toa-nha', name: 'Tháp Đôi Văn Phòng A+', x: 1029.6, y: 368.6 },

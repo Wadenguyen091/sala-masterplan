@@ -518,3 +518,26 @@ Hover and select on the 3D map: the whole building is covered by its Figma gold 
   - the comet is white;
   - the lit building from the dusk render is in greyscale.
 - Đang mở bán and Sắp mở bán projects keep the gold hover.
+
+## v11.0 (05/11)
+- The Trung tâm Hành chính tag leader is 20 px (was 16).
+- The opening view of the urban 3D map still favours the bottom edge, but it keeps room above for the Trung tâm Hành chính tag, so the tag never starts cut off (section embed). The tag's leader ends on the top of the tallest tower (y 140).
+
+## v11.1 (05/11)
+- Sắp mở bán is now shown in Sala gold #BC8E49 (primitive/primary) in the panel header. It was info blue #5276B8.
+
+## v11.2 (05/11)
+- The popover CTA follows the sales status:
+  - **Chưa mở bán:** "Đăng kí nhận thông tin", notice "Điều hướng trang form đăng kí" (`registerHref`).
+  - **Đang / Sắp mở bán:** "Xem chi tiết dự án", notice "Điều hướng trang chi tiết dự án" (`href`). This includes the short popovers for Saroma Villas, Sadora and Savila.
+  - **Amenities:** "Xem chi tiết tiện ích", notice "Điều hướng trang chi tiết tiện ích".
+- Each CTA carries its notice in `data-toast`. Once a real link replaces '#', the CTA navigates instead.
+
+## v11.3 (05/11)
+- The intro text under the section title follows the view, the same way the title does (`D.descriptions`):
+  - **Tổng quan:** the Thủ Thiêm text.
+  - **Khu đô thị and Tiện ích** ("Dòng chảy kết nối"): "Sala mở ra những kết nối liền mạch với thành phố, đồng thời liên kết các dự án và tiện ích trong một hệ sinh thái sống thống nhất. Khám phá những kết nối tạo nên nhịp sống Sala."
+  It fades out and in with the title.
+
+## v11.4 (05/11)
+- The Trung tâm hành chính hover on the Tổng quan map is removed (`overviewAreas` is empty). The 3D urban map keeps its Trung tâm Hành chính tag and hover. The v9.3 code stays, so an area can come back by adding it to `overviewAreas`.
