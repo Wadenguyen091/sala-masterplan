@@ -52,6 +52,20 @@ img { display: block; }
 .mm-title .accent { color: var(--brand); }
 .mm-title.is-swapping { opacity: 0; transform: translateY(8px); }
 .mm-desc { margin: 0; max-width: 720px; font-size: 16px; line-height: 1.2; color: var(--text-title); }
+/* v8.7 header (feedback 05/11): title on the left, description on the right, both on the frame's width,
+   bottoms aligned. Phones keep the stacked, centred header. */
+@media (min-width: 768px) {
+  .mm-section .mm-heading {
+    width: 1360px; max-width: 100%; flex-direction: row; align-items: flex-end; justify-content: space-between;
+    gap: 40px; text-align: left;
+  }
+  .mm-section .mm-title { flex: none; }
+  .mm-section .mm-title .ln { white-space: nowrap; }
+  .mm-section .mm-desc { flex: 0 1 560px; max-width: 560px; min-width: 0; }
+}
+@media (min-width: 768px) and (max-width: 1440px) {
+  .mm-section .mm-heading { width: calc(100vw - 80px); }
+}
 
 /* Mode switch (Web/Map/Mode Switch) */
 .mm-mode {
@@ -112,23 +126,33 @@ img { display: block; }
 
 /* Overview: brown arterial roads highlight */
 .mm-ovroads { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
-.mm-ov-dim { fill: #2a1c0a; fill-opacity: .34; opacity: 0; }
+.mm-ov-dim, .mm-ovroads .mm-ov-dim { fill: #2a1c0a; fill-opacity: .34; opacity: 0; }
 .mm-ovroads path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.mm-ovroad__metro {
+  stroke-width: 2.2; opacity: .92; vector-effect: non-scaling-stroke;
+  animation: mmMetroDash 1.25s linear infinite;
+}
+@keyframes mmMetroDash { to { stroke-dashoffset: -20; } }
+@media (prefers-reduced-motion: reduce) { .mm-ovroad__metro { animation: none; } }
+/* overview named area (v9.3): gold wash + 1 px light rim on hover */
+.mm-ovroads .mm-ovarea__fill { fill: #ffe2a6; fill-opacity: .14; pointer-events: none; }   /* a light lift on top of the undimmed block */
+.mm-ovroads .mm-ovarea__rim { fill: none; stroke: #ffe7b0; stroke-width: 1; vector-effect: non-scaling-stroke; stroke-linejoin: round; pointer-events: none; }
+.mm-ovroads .mm-ovarea__hit { fill: transparent; stroke: none; pointer-events: fill; cursor: pointer; }
 .mm-ovroad__hit { stroke: transparent; stroke-width: 30; pointer-events: stroke; cursor: pointer; }
 .mm-ovchip { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; z-index: 4; }
 .mm-ovchip__box {
   position: absolute; left: 0; bottom: 14px; transform: translateX(-50%);
-  display: flex; align-items: center; gap: 8px; padding: 8px 14px 8px 12px; border-radius: 94px;
-  font-size: 14px; line-height: 1.2; white-space: nowrap; color: #fffef2;
-  background: rgba(108, 63, 34, .82); border: 1.5px solid rgba(255, 231, 176, .7);
+  display: flex; align-items: center; gap: 6px; padding: 5px 10px 5px 8px; border-radius: 94px;
+  font-size: 12px; line-height: 1.2; white-space: nowrap; color: #fffef2;
+  background: rgba(108, 63, 34, .82); border: 1px solid rgba(255, 231, 176, .7);
   -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
   box-shadow: 0 6px 20px rgba(40, 22, 6, .35), 0 0 18px rgba(255, 220, 150, .25);
 }
-.mm-ovchip__box::after { content: ''; position: absolute; left: 50%; top: 100%; width: 2px; height: 12px; margin-left: -1px; background: linear-gradient(rgba(255, 231, 176, .8), rgba(255, 231, 176, 0)); }
-.mm-ovchip__dot { width: 8px; height: 8px; border-radius: 50%; background: #ffe7b0; box-shadow: 0 0 0 3px rgba(255, 231, 176, .25), 0 0 10px #ffe7b0; flex: none; }
+.mm-ovchip__box::after { content: ''; position: absolute; left: 50%; top: 100%; width: 1px; height: 12px; margin-left: -.5px; background: linear-gradient(rgba(255, 231, 176, .8), rgba(255, 231, 176, 0)); }
+.mm-ovchip__dot { width: 6px; height: 6px; border-radius: 50%; background: #ffe7b0; box-shadow: 0 0 0 2px rgba(255, 231, 176, .25), 0 0 10px #ffe7b0; flex: none; }
 .mm-ovchip.is-below .mm-ovchip__box { bottom: auto; top: 14px; }
 .mm-ovchip.is-below .mm-ovchip__box::after { top: auto; bottom: 100%; background: linear-gradient(rgba(255, 231, 176, 0), rgba(255, 231, 176, .8)); }
-[data-layout="section-mobile"] .mm-ovchip__box, [data-layout="page-landscape"] .mm-ovchip__box { font-size: 12px; padding: 6px 11px 6px 9px; }
+[data-layout="section-mobile"] .mm-ovchip__box, [data-layout="page-landscape"] .mm-ovchip__box { font-size: 12px; padding: 4px 9px 4px 7px; }
 
 /* Sala pin (overview) */
 .mm-sala-pin {
@@ -149,15 +173,15 @@ img { display: block; }
 
 /* Project labels (3D master map) */
 .mm-proj {
-  position: absolute; left: 0; top: 0; display: flex; align-items: flex-start; height: 120px;
+  position: absolute; left: 0; top: 0; display: flex; align-items: flex-start; height: 84px;
   transition: opacity .4s ease;
   --c: 200, 34, 84;
 }
-.mm-proj__line { width: 2px; height: 100%; background: linear-gradient(rgb(var(--c)), rgba(var(--c), 0)); flex: none; transition: background .3s ease; }
+.mm-proj__line { width: 1px; height: 100%; background: linear-gradient(rgb(var(--c)), rgba(var(--c), 0)); flex: none; transition: background .3s ease; }
 .mm-proj__tag {
-  padding: 8px 12px; font-size: 14px; line-height: 1.2; color: var(--on-brand); white-space: nowrap;
+  padding: 5px 10px; font-size: 12px; line-height: 1.2; color: var(--on-brand); white-space: nowrap;
   background: rgba(var(--c), .6); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
-  border: 2px solid rgba(var(--c), 0);
+  border: 1px solid rgba(var(--c), 0);
   transition: background .3s ease, transform .3s var(--ease-out), box-shadow .3s ease;
 }
 .mm-proj--right .mm-proj__tag { border-radius: 0 4px 4px 0; transform-origin: 0 50%; }
@@ -173,33 +197,33 @@ img { display: block; }
 .mm-road { position: absolute; left: 0; top: 0; display: flex; align-items: center; pointer-events: none; --c: 122, 122, 122; }
 .mm-road__pill { pointer-events: auto; cursor: default; transition: background .3s ease, border-color .3s ease, box-shadow .3s ease; }
 .mm-road.is-hover .mm-road__pill, .mm-road__pill:hover { background: rgba(var(--c), .85); border-color: rgba(255, 231, 176, .8); box-shadow: 0 0 18px rgba(255, 220, 150, .35); }
-.mm-road__dot { position: absolute; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; background: #fffef2; box-shadow: 0 0 0 2px rgba(var(--c), .9); }
+.mm-road__dot { position: absolute; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: #fffef2; box-shadow: 0 0 0 1px rgba(var(--c), .9); }
 .mm-road--down .mm-road__dot { left: 50%; top: 0; }
 .mm-road--up .mm-road__dot { left: 50%; top: 100%; }
 .mm-road--left .mm-road__dot { left: 100%; top: 50%; }
 .mm-road--right .mm-road__dot { left: 0; top: 50%; }
 .mm-road--gold { --c: 188, 142, 73; }
 .mm-road__pill {
-  padding: 8px 12px; border-radius: 94px; font-size: 14px; line-height: 1.2; white-space: nowrap; color: var(--on-brand);
-  background: rgba(var(--c), .5); border: 2px solid rgba(var(--c), .5);
+  padding: 5px 10px; border-radius: 94px; font-size: 12px; line-height: 1.2; white-space: nowrap; color: var(--on-brand);
+  background: rgba(var(--c), .5); border: 1px solid rgba(var(--c), .5);
   -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
 }
 .mm-road__line { flex: none; }
 .mm-road--up, .mm-road--down { flex-direction: column; }
-.mm-road--up .mm-road__line { width: 2px; background: linear-gradient(rgb(var(--c)), rgba(var(--c), 0)); }
+.mm-road--up .mm-road__line { width: 1px; background: linear-gradient(rgb(var(--c)), rgba(var(--c), 0)); }
 .mm-road--down { flex-direction: column-reverse; }
-.mm-road--down .mm-road__line { width: 2px; background: linear-gradient(rgba(var(--c), 0), rgb(var(--c))); order: 0; }
-.mm-road--left .mm-road__line { height: 2px; background: linear-gradient(90deg, rgb(var(--c)), rgba(var(--c), 0)); }
+.mm-road--down .mm-road__line { width: 1px; background: linear-gradient(rgba(var(--c), 0), rgb(var(--c))); order: 0; }
+.mm-road--left .mm-road__line { height: 1px; background: linear-gradient(90deg, rgb(var(--c)), rgba(var(--c), 0)); }
 .mm-road--right { flex-direction: row-reverse; }
-.mm-road--right .mm-road__line { height: 2px; background: linear-gradient(90deg, rgba(var(--c), 0), rgb(var(--c))); }
+.mm-road--right .mm-road__line { height: 1px; background: linear-gradient(90deg, rgba(var(--c), 0), rgb(var(--c))); }
 .mm-section .mm-road.is-street { display: none; }
-.mm-section .mm-road.is-bridge .mm-road__pill { font-size: 12px; padding: 5px 10px; }
+.mm-section .mm-road.is-bridge .mm-road__pill { font-size: 12px; padding: 5px 10px; }   /* = every map label (v8.7) */
 .mm-section .mm-road.is-bridge .mm-road__pill, .mm-section .mm-road.is-bridge .mm-road__line { opacity: 0; transition: opacity .3s ease; pointer-events: none; }
 .mm-section .mm-road.is-bridge:hover .mm-road__pill, .mm-section .mm-road.is-bridge:hover .mm-road__line, .mm-section .mm-road.is-bridge.is-hover .mm-road__pill { opacity: 1; }
 .mm-road__dot { pointer-events: auto; cursor: default; }
 .mm-road__dot::after { content: ''; position: absolute; inset: -9px; border-radius: 50%; }
 .mm-section .mm-road.is-bridge .mm-road__dot { animation: dotBreath 2.6s ease-in-out infinite; }
-@keyframes dotBreath { 0%, 100% { box-shadow: 0 0 0 2px rgba(var(--c), .9); } 50% { box-shadow: 0 0 0 2px rgba(var(--c), .9), 0 0 0 7px rgba(255, 254, 242, .25); } }
+@keyframes dotBreath { 0%, 100% { box-shadow: 0 0 0 1px rgba(var(--c), .9); } 50% { box-shadow: 0 0 0 1px rgba(var(--c), .9), 0 0 0 6px rgba(255, 254, 242, .25); } }
 .mm-page .mm-roadname { display: none; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
@@ -219,7 +243,7 @@ img { display: block; }
 .mm-pin__tip {
   position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translate(-50%, 4px);
   padding: 6px 10px; border-radius: 4px; background: rgba(40, 32, 20, .82); color: var(--on-brand);
-  font-size: 13px; line-height: 1.2; white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity .2s ease, transform .2s ease;
+  font-size: 12px; line-height: 1.2; white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity .2s ease, transform .2s ease;
 }
 .mm-pin:hover .mm-pin__tip { opacity: 1; transform: translate(-50%, 0); }
 .mm-pin.is-active .mm-pin__tip { opacity: 0; }
@@ -376,7 +400,7 @@ img { display: block; }
   .mm-legend img { width: 180px; height: auto; }
   .mm-tabs button { width: 140px; font-size: 16px; }
   .mm-tabs__indicator { width: 140px; }
-  .mm-proj__tag, .mm-road__pill { font-size: 12px; padding: 6px 10px; }
+  .mm-road__pill, .mm-proj__tag { font-size: 12px; padding: 4px 8px; }   /* every map label is 12 px (v8.7) */
 
   /* Bottom sheet on phones (section) */
   .mm-section .mm-panel {
@@ -487,9 +511,9 @@ img { display: block; }
    leader line turned towards the bridge, pill at its far end. No arrows. */
 .mm-edge { position: absolute; left: 0; top: 0; width: 0; height: 0; z-index: 8; opacity: 0; pointer-events: none; transition: opacity .35s ease; --c: 122, 122, 122; }
 .mm-edge.is-on { opacity: 1; }
-.mm-edge__dot { position: absolute; left: -4px; top: -4px; width: 8px; height: 8px; border-radius: 50%; background: #fffef2; box-shadow: 0 0 0 2px rgba(var(--c), .9); animation: dotBreath 2.6s ease-in-out infinite; }
+.mm-edge__dot { position: absolute; left: -3px; top: -3px; width: 6px; height: 6px; border-radius: 50%; background: #fffef2; box-shadow: 0 0 0 2px rgba(var(--c), .9); animation: dotBreath 2.6s ease-in-out infinite; }
 .mm-edge__pill { position: absolute; left: 0; top: 0; padding: 5px 10px; border-radius: 94px; font-size: 12px; line-height: 1.2; white-space: nowrap; color: var(--on-brand);
-  background: rgba(var(--c), .5); border: 2px solid rgba(var(--c), .5); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  background: rgba(var(--c), .5); border: 1px solid rgba(var(--c), .5); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
   cursor: pointer; transition: background .3s ease, border-color .3s ease, box-shadow .3s ease; }
 .mm-edge.is-on .mm-edge__pill { pointer-events: auto; }
 .mm-edge__pill:hover { background: rgba(var(--c), .85); border-color: rgba(255, 231, 176, .8); box-shadow: 0 0 18px rgba(255, 220, 150, .35); }
@@ -514,6 +538,8 @@ img { display: block; }
 /* hovering a road: its label turns into the gold Figma pill (hover tag + designer road pills) */
 .mm-road.is-street.is-hover { --c: 188, 142, 73; }
 .mm-road--tag .mm-road__pill, .mm-road.is-street.is-hover .mm-road__pill { background: rgba(var(--c), .9); border-color: rgba(255, 231, 176, .75); box-shadow: 0 0 18px rgba(255, 210, 140, .35); }
+/* Metro hover pill takes the line's own colour, light rim of the same hue (v8.9) */
+.mm-road--tag.is-metro .mm-road__pill { border-color: rgba(255, 254, 242, .55); box-shadow: 0 0 16px rgba(var(--c), .45); }
 
 /* bridge node: dot + badge beside it, no leader line */
 .mm-edge__pill.is-gliding { transition: transform .3s cubic-bezier(.22, 1, .36, 1), background .3s ease; }
@@ -702,7 +728,7 @@ img { display: block; }
 .mm-ctrl button[data-tip]:hover::before, .mm-ctrl button[data-tip]:focus-visible::before { opacity: 1; }
 @media (hover: none) { .mm-ctrl button[data-tip]::after, .mm-ctrl button[data-tip]::before { display: none; } }
 /* HD overview map: its own (tighter) extent in map space; legend image keeps its proportions */
-.mm-ov-img.mm-ov-img--hd { left: 82.9px; top: 335.7px; width: 1304.9px; height: 1021.2px; }
+.mm-ov-img.mm-ov-img--hd { left: 175.9px; top: 386.8px; width: 1237.8px; height: 761.9px; }
 .mm-legend img, .mm-section .mm-legend img { height: auto; object-fit: contain; }
 /* amenity nodes: all Sala pink at rest; the hovered / selected one turns gold, the others go grey meanwhile */
 .mm-pin, .mm-pin--featured { border-color: var(--brand-2); color: var(--brand-2); }
@@ -784,3 +810,57 @@ img { display: block; }
 .mm-gal__track button.mm-skel img { transition: opacity .45s ease, transform .4s ease; }
 @keyframes mm-skel { from { background-position: 120% 0; } to { background-position: -120% 0; } }
 @media (prefers-reduced-motion: reduce) { .mm-skel::before { animation: none; } }
+
+/* 3D landmark (v9.4): the gold road tag stays visible; it lifts like a road label while its outline is lit */
+.mm-landmark { pointer-events: auto; }
+.mm-landmark .mm-road__pill { cursor: default; }
+.mm-landmark.is-hover .mm-road__pill { background: rgba(var(--c), .85); border-color: rgba(255, 231, 176, .8); box-shadow: 0 0 18px rgba(255, 220, 150, .35); }
+.mm-landmark .mm-road__dot { display: none; }   /* v9.5: the Figma road tag for a landmark is pill + leader only, no dot */
+
+/* ===== v9.7 amenity pins on the 3D map (Figma Web/Map/Amenity Pin + Road Tag, 28418:14159 / 14922) =====
+   rest: 20 px, cream fill, 2 px Sala pink ring, 12 px pink icon.
+   hover / selected: that pin stays pink and its name rises in a pink road tag (pill + leader);
+   every other pin turns gold. The map does not dim. */
+.mm-pin, .mm-pin--featured, .mm-pin:hover, .mm-pin:focus-visible, .mm-pin.is-active {
+  width: 28px; height: 28px; margin: -14px 0 0 -14px; border: 2px solid var(--brand-2); background: var(--bg-under);   /* v10.2: 20 → 28 px (Hyun: icons too small) */
+  color: var(--brand-2); box-shadow: none; }
+.mm-pin .svg-icon, .mm-pin.is-active .svg-icon { width: 16px; height: 16px; }   /* v10.2: 12 → 16 px */
+.mm-pin { transition: border-color .25s ease, color .25s ease, transform .3s var(--ease-out); }
+.mm-pin:hover, .mm-pin:focus-visible, .mm-pin.is-active { transform: scale(1.1); }
+.mm-pin .mm-pin__pulse, .mm-pin.is-active .mm-pin__pulse { display: none; }
+.mm-markers:has(.mm-pin:hover) .mm-pin:not(:hover):not(.is-active),
+.mm-markers:has(.mm-pin.is-active) .mm-pin:not(:hover):not(.is-active),
+.mm-markers:has(.mm-pin:focus-visible) .mm-pin:not(:focus-visible):not(.is-active) { border-color: var(--brand); color: var(--brand); }
+.mm-pin .mm-pin__tip, .mm-pin:hover .mm-pin__tip, .mm-pin:focus-visible .mm-pin__tip, .mm-pin.is-active .mm-pin__tip {
+  bottom: calc(100% + 28px); padding: 5px 10px; border-radius: 94px; font-size: 12px; line-height: 1.2; color: #fffef2;
+  background: rgba(200, 34, 84, .5); border: 1px solid rgba(200, 34, 84, .5); box-shadow: none;
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+.mm-pin:hover .mm-pin__tip, .mm-pin:focus-visible .mm-pin__tip, .mm-pin.is-active .mm-pin__tip { opacity: 1; transform: translate(-50%, 0); }
+/* the leader: 1 px, solid pink at the pill fading out towards the pin */
+.mm-pin .mm-pin__tip::after { top: 100%; margin-left: -.5px; width: 1px; height: 28px; border: 0;
+  background: linear-gradient(#c82254, rgba(200, 34, 84, 0)); }
+.mm-layer[data-map="amenity"] .mm-am-dim { display: none; }
+
+/* v9.8 project panel header = sales status (Figma 28422:16102 / 16114 / 16126) */
+.mm-panel__kind[data-status="open"] { color: #2f806c; }
+.mm-panel__kind[data-status="soon"] { color: #5276b8; }
+.mm-panel__kind[data-status="closed"] { color: #c94b4b; }
+
+/* v9.9 short project panel: on phones the bottom sheet hugs its content instead of 82% of the screen */
+@media (max-width: 767px) { .mm-section .mm-panel.is-brief { height: auto; max-height: min(840px, 82dvh); } }
+/* v10.3 phones: pins step down to 24 px (icon 14 px) so the clusters breathe on the small map,
+   and every pin gets an invisible 44 px touch area (the visible pin keeps its size) */
+[data-layout="section-mobile"] .mm-pin, [data-layout="page-landscape"] .mm-pin { width: 24px; height: 24px; margin: -12px 0 0 -12px; }
+[data-layout="section-mobile"] .mm-pin .svg-icon, [data-layout="page-landscape"] .mm-pin .svg-icon { width: 14px; height: 14px; }
+@media (hover: none), (pointer: coarse) {
+  .mm-pin::before { content: ''; position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%; }
+}
+
+/* v10.4 same-name pins light together: a twin stays pink (no tag) while another pin of the same place is hovered */
+.mm-markers .mm-pin.is-twin, .mm-markers:has(.mm-pin:hover) .mm-pin.is-twin:not(:hover) { border-color: var(--brand-2); color: var(--brand-2); transform: scale(1.1); }
+.mm-mk:has(.mm-pin.is-twin) { z-index: 4; }
+
+/* v10.8: the status dot on the flags (v10.6–10.7) was removed; the status shows in the panel header only */
+
+/* v10.9 Chưa mở bán: the building cut from the dusk render is shown in greys too (no warm gold glow) */
+.mm-zone-g.is-neutral .mm-zone-lit { filter: grayscale(1) brightness(1.08) contrast(1.05); }

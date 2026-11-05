@@ -12,24 +12,31 @@
   var IMG = 'assets/img/';
   var NS = 'http://www.w3.org/2000/svg';
 
+  var PROJ_POLE = 84;   /* project flag pole height (px, desktop); phones use 0.72× — v8.7 smaller flags */
+
+  /* project sales status → panel header label (colours in style.css, Figma text/success, text/info, text/alert) */
+  var SALE_STATUS = { open: { label: 'Đang mở bán' }, soon: { label: 'Sắp mở bán' }, closed: { label: 'Chưa mở bán' } };
+
   var CONFIG = {
+    /* v9.6: urban 3D map background = the client's graded render; set to null to go back to map-3d.webp + CSS grade */
+    master3dBaked: 'map-3d-v95.webp',
     /* views: 'overview' (location map) → click the SALA pin → 'tod' (green TOD plan, still in
        "Bản đồ tổng quan" mode) · 'urban' (3D master map) · 'amenity' (top-view amenities) */
     mapOf: { overview: 'overview', tod: 'plan2d', urban: 'master3d', amenity: 'amenity' }
   };
 
   var MAPS = {
-    overview: { w: 2030, h: 1471, bounds: [82.9, 335.7, 1387.8, 1356.9] },   /* = the HD map's own extent (map-overview-hd.webp) */
+    overview: { w: 2030, h: 1471, bounds: [175.9, 386.8, 1413.7, 1148.7] },   /* = the v8.4 artwork (3402 x 2094) registered on the old HD map */
     plan2d: { w: 2030, h: 1471, bounds: [0, 0, 2030, 1471] },
     master3d: { w: 1648, h: 920, bounds: [0, 0, 1648, 920] },
-    amenity: { w: 2215, h: 1236, bounds: [0, 0, 2215, 1236] }
+    amenity: { w: 1648, h: 920, bounds: [0, 0, 1648, 920] }   /* v9.7: Tiện ích uses the urban 3D render too */
   };
 
   var LAYOUTS = {
-    'section-desktop': { dw: 1360, dh: 680, cams: { overview: [793, 809, 1], plan2d: [1243, 527, 1], master3d: [855, 438, 1], amenity: [1237, 500, 1] } },
-    'section-mobile': { dw: 390, dh: 680, cams: { overview: [798, 913, 0.609], plan2d: [1363, 396, 1], master3d: [676, 382, 1.1956], amenity: [1237, 500, 1] } },
-    'page-desktop': { dw: 1440, dh: 810, cams: { overview: [792, 808.5, 1.405], plan2d: [1230, 503, 1], master3d: [886.4, 418.4, 1.289], amenity: [1224.7, 474.4, 1.288] } },
-    'page-landscape': { dw: 932, dh: 430, cams: { overview: [776, 839, 0.7026], plan2d: [1279, 532, 0.6207], master3d: [789.5, 320.4, 0.9667], amenity: [1197, 455, 0.728] } }
+    'section-desktop': { dw: 1360, dh: 680, cams: { overview: [793, 809, 1], plan2d: [1243, 527, 1], master3d: [855, 438, 1], amenity: [855, 438, 1] } },
+    'section-mobile': { dw: 390, dh: 680, cams: { overview: [798, 913, 0.609], plan2d: [1363, 396, 1], master3d: [676, 382, 1.1956], amenity: [676, 382, 1.1956] } },
+    'page-desktop': { dw: 1440, dh: 810, cams: { overview: [792, 808.5, 1.405], plan2d: [1230, 503, 1], master3d: [886.4, 418.4, 1.289], amenity: [886.4, 418.4, 1.289] } },
+    'page-landscape': { dw: 932, dh: 430, cams: { overview: [776, 839, 0.7026], plan2d: [1279, 532, 0.6207], master3d: [789.5, 320.4, 0.9667], amenity: [789.5, 320.4, 0.9667] } }
   };
 
   /* ---------- helpers ---------- */
@@ -174,10 +181,11 @@
     comet: { color: '#f0bd63', core: '#fff4d8', width: 3.4, glowWidth: 14, radius: 26, spacing: 10, profile: 'comet', head: 45, tail: 300, endFade: 140 }
   };
   var ROAD_FX_SIZE = ['width', 'glowWidth', 'radius', 'spacing', 'head', 'tail', 'endFade'];
-  function roadLights(svg, g, d, S, grad, glowId, softId, dur, gap) {
+  function roadLights(svg, g, d, S, grad, glowId, softId, dur, gap, tint) {
     function cfg(base, filter) {
       var o = { grad: grad, glowFilter: filter };
       for (var k in base) o[k] = base[k];
+      if (tint) { o.color = tint.color; o.core = tint.core; }   /* e.g. a Metro line lights up in its own dash colour */
       ROAD_FX_SIZE.forEach(function (k) { if (o[k] != null) o[k] *= S; });
       return o;
     }
@@ -573,10 +581,11 @@
     c.appendChild(OV_VECTOR
       ? el('div', 'mm-ov-img is-baked', '<img src="' + IMG + 'map-overview.webp" alt="Bản đồ vị trí Hệ sinh thái SALA" draggable="false" decoding="async">')
       : el('div', 'mm-ov-img mm-ov-img--hd', '<img alt="Bản đồ vị trí Hệ sinh thái SALA" draggable="false" decoding="async">'));
-    if (!OV_VECTOR) this.lazy(c.querySelector('.mm-ov-img--hd img'), 'overview', IMG + 'map-overview-hd.webp');
-    /* map-overview-hd.webp: the designer's HD export (7482 px, scaled to 4096). It is registered on the old map-tong.jpg
-       by matching the brown arterials (new = 5.258 × old − (475, 876) in old raster px), so it sits at
-       map space (82.9, 335.7) 1304.9 × 1021.2 and every overlay (zone, pin, road lights) keeps its coordinates. */
+    if (!OV_VECTOR) this.lazy(c.querySelector('.mm-ov-img--hd img'), 'overview', IMG + 'map-overview-v84.webp');
+    /* Client overview export v8.4 (3402 x 2094). It is a tighter crop at a different scale than the old HD
+       export, so it is registered on map-overview-hd.webp by matching 401 shared features (SIFT + RANSAC,
+       median error 0.8 px, no rotation): new = 1.1421 x old-HD px + (291.9, 160.4). In map space it sits at
+       (175.9, 386.8) 1237.8 x 761.9, so the zone, pin, roads and Metro overlays keep their coordinates. */
     this.buildOverviewRoads(c);
     var z = D.overview.zone;
     var zone = this.salaZone = el('div', 'mm-zone mm-zone--sala', I.salaZone);
@@ -596,24 +605,41 @@
      Idle: a soft gold light travels along each axis. Hover: the map dims, the road lights up
      (glow + bright core drawn on), and a name chip follows the pointer along the road. */
   P.buildOverviewRoads = function (c) {
-    var self = this, W = MAPS.overview.w, H = MAPS.overview.h, R = D.overviewRoads || [];
+    var self = this, W = MAPS.overview.w, H = MAPS.overview.h,
+      R = (D.overviewRoads || []).concat(D.overviewTransit || []);
     if (!R.length) return;
     var svg = this.ovSvg = svgEl('svg', { 'class': 'mm-ovroads', width: W, height: H, viewBox: '0 0 ' + W + ' ' + H });
     svg.__host = { app: this, map: 'overview' };
     svg.innerHTML = '<defs><filter id="mmOvGlow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="5"/></filter>' +
       '<filter id="mmOvSoft" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="3"/></filter>' + cometGradDefs('mmCometGradO') + '</defs>';
-    this.ovDim = svgEl('rect', { 'class': 'mm-ov-dim', x: 0, y: 183, width: 1647, height: 1288 });
+    this.ovDimRect = 'M 0 0 H ' + W + ' V ' + H + ' H 0 Z';
+    this.ovDim = svgEl('path', { 'class': 'mm-ov-dim', d: this.ovDimRect, 'fill-rule': 'evenodd' });   /* v9.3: a path, so a hovered area can be cut out of the dim */
     svg.appendChild(this.ovDim);
     G.set(this.ovDim, { opacity: 0 });
     this.ovRoads = {};
     R.forEach(function (rd) {
-      var g = svgEl('g', { 'class': 'mm-ovroad' });
+      var metro = rd.kind === 'metro';
+      var g = svgEl('g', { 'class': 'mm-ovroad' + (metro ? ' is-metro' : '') });
+      var base = null;
+      if (metro) {
+        var gradId = 'mmMetroFade-' + rd.id;
+        var grad = svgEl('linearGradient', { id: gradId, gradientUnits: 'userSpaceOnUse',
+          x1: rd.x1, y1: rd.y1, x2: rd.x2, y2: rd.y2 });
+        [[0, 0], [0.1, 1], [0.9, 1], [1, 0]].forEach(function (s) {
+          grad.appendChild(svgEl('stop', { offset: (s[0] * 100) + '%',
+            'stop-color': rd.color || '#6d7b36', 'stop-opacity': s[1] }));
+        });
+        svg.querySelector('defs').appendChild(grad);
+        base = svgEl('path', { 'class': 'mm-ovroad__metro', d: rd.d,
+          'stroke': 'url(#' + gradId + ')', 'stroke-dasharray': rd.dash || '8 13' });
+        g.appendChild(base);
+      }
       /* hover / reveal highlight (whole road, tapered to 0 at both ends) + idle comet — shared ROAD_FX look */
-      var fx = roadLights(svg, g, rd.d, 1, 'mmCometGradO', 'mmOvGlow', 'mmOvSoft', rd.dur, 1), hl = fx.hl, comet = fx.comet;
+      var fx = roadLights(svg, g, rd.d, 1, 'mmCometGradO', 'mmOvGlow', 'mmOvSoft', rd.dur, 1, rd.light), hl = fx.hl, comet = fx.comet;
       var hit = svgEl('path', { 'class': 'mm-ovroad__hit', d: rd.d });
       g.appendChild(hit);
       svg.appendChild(g);
-      var o = self.ovRoads[rd.id] = { rd: rd, g: g, hl: hl, comet: comet, hit: hit, pts: null };
+      var o = self.ovRoads[rd.id] = { rd: rd, g: g, base: base, hl: hl, comet: comet, hit: hit, pts: null };
       hit.addEventListener('pointerenter', function (e) { if (e.pointerType !== 'touch') { self.hoverOvRoad(rd.id, true, e); if (self.ovHover === rd.id) self.showRoadTag('overview', o, rd.name, false, e); } });
       hit.addEventListener('pointermove', function (e) { if (self.ovHover === rd.id && e.pointerType !== 'touch') self.showRoadTag('overview', o, rd.name, false, e); });
       hit.addEventListener('pointerleave', function (e) { if (e.pointerType !== 'touch') self.hoverOvRoad(rd.id, false); });
@@ -625,8 +651,65 @@
         if (self.ovHover === rd.id) self.showRoadTag('overview', o, rd.name, false, e);
       });
     });
+    /* named areas (v9.3): fill + 1 px rim + a comet once around the outline, name pinned at the top */
+    (D.overviewAreas || []).forEach(function (ar) {
+      var g = svgEl('g', { 'class': 'mm-ovarea' });
+      var fill = svgEl('path', { 'class': 'mm-ovarea__fill', d: ar.d });
+      var rim = svgEl('path', { 'class': 'mm-ovarea__rim', d: ar.d });
+      g.appendChild(fill); g.appendChild(rim);
+      var trace = makeLight(svg, g, ar.d, { grad: 'mmCometGradO', color: '#ffd98f', core: '#fff8ea', width: 1.8, glowWidth: 6, glowFilter: 'mmOvSoft', radius: 9, spacing: 3.5, profile: 'comet', head: 16, tail: 260, endFade: 6 });
+      G.set(trace.g, { opacity: 0 }); G.set([fill, rim], { opacity: 0 });
+      var hit = svgEl('path', { 'class': 'mm-ovarea__hit', d: ar.d });
+      g.appendChild(hit);
+      svg.insertBefore(g, svg.querySelector('.mm-ovroad'));   /* under the roads, so a road crossing it keeps its own hover */
+      /* tag anchor: the top-most point of the outline */
+      var top = null; ar.d.replace(/(-?[\d.]+) (-?[\d.]+)/g, function (_, x, y) { x = +x; y = +y; if (!top || y < top[1]) top = [x, y]; });
+      var o = self.ovAreas = self.ovAreas || {};
+      o[ar.id] = { ar: ar, fill: fill, rim: rim, trace: trace, top: top };
+      hit.addEventListener('pointerenter', function (e) { if (e.pointerType !== 'touch') self.hoverOvArea(ar.id, true); });
+      hit.addEventListener('pointerleave', function (e) { if (e.pointerType !== 'touch') self.hoverOvArea(ar.id, false); });
+      hit.addEventListener('click', function (e) {
+        if (self.suppress) return;
+        if (e.pointerType === 'touch' && self.ovAreaHover === ar.id) return self.hoverOvArea(ar.id, false);
+        self.hoverOvArea(ar.id, true);
+      });
+    });
     c.appendChild(svg);
     this.makeRoadTag('overview');
+  };
+
+  P.hoverOvArea = function (id, on) {
+    if (on && (this.active !== 'overview' || this.busy)) return;
+    var self = this, a = this.ovAreas && this.ovAreas[id];
+    if (!a) return;
+    if (on && this.ovHover) this.hoverOvRoad(this.ovHover, false);
+    if (on && this.ovAreaHover && this.ovAreaHover !== id) this.hoverOvArea(this.ovAreaHover, false);
+    this.ovAreaHover = on ? id : null;
+    Object.keys(this.ovRoads || {}).forEach(function (k) {
+      var r = self.ovRoads[k];
+      G.to(r.comet.g, { opacity: on ? 0.15 : 1, duration: 0.4, overwrite: 'auto' });
+      if (r.base) G.to(r.base, { opacity: on ? 0.18 : 1, duration: 0.4, overwrite: 'auto' });
+    });
+    var dim = this.ovDim, rect = this.ovDimRect;
+    if (on) dim.setAttribute('d', rect + ' ' + a.ar.d);   /* the area stays at full brightness, the rest dims */
+    G.to(dim, { opacity: on ? 1 : 0, duration: 0.5, ease: 'power2.out', overwrite: true,
+      onComplete: on ? null : function () { if (!self.ovAreaHover) dim.setAttribute('d', rect); } });
+    if (this.ovlEl) this.ovlEl.classList.toggle('is-dim', on);
+    G.to([a.fill, a.rim], { opacity: on ? 1 : 0, duration: on ? 0.35 : 0.3, overwrite: true });
+    var t = this.tags && this.tags.overview;
+    if (on) {
+      a.trace.once(1.6);
+      if (t) {
+        if (t.name !== a.ar.name) { t.name = a.ar.name; t.pill.textContent = a.ar.name; t.m.w = 0; }
+        t.n.classList.add('mm-road--gold'); t.n.classList.remove('is-metro'); t.n.style.removeProperty('--c');
+        if (t.down) { t.down = false; t.n.classList.add('mm-road--up'); t.n.classList.remove('mm-road--down'); t.m.anchor = 'road-up'; }
+        t.m.x = a.top[0]; t.m.y = a.top[1]; this.apply('overview');
+        if (!t.on) { t.on = true; G.fromTo(t.n, { autoAlpha: 0, y: 8 }, { autoAlpha: 1, y: 0, duration: 0.35, ease: 'back.out(1.6)', overwrite: true }); }
+      }
+    } else {
+      a.trace.hide(0.3);
+      this.hideRoadTag('overview');
+    }
   };
 
   /* nearest point on a road (in map space) to a client-space pointer; the path is sampled once, lazily.
@@ -648,7 +731,7 @@
   /* road name on hover: the Figma road-label (pill + leader + dot) pops up where the pointer is on the road */
   P.makeRoadTag = function (map) {
     var n = el('div', 'mm-road mm-road--up mm-road--tag', '<span class="mm-road__pill"></span><span class="mm-road__line"></span><span class="mm-road__dot"></span>');
-    n._len = 40;
+    n._len = 28;   /* v8.7: 40 → 28, with the smaller labels */
     var m = this.addMarker(map, n, 0, 0, 'road-up');
     G.set(n, { autoAlpha: 0 });
     (this.tags = this.tags || {})[map] = { n: n, m: m, pill: n.querySelector('.mm-road__pill'), on: false, name: '' };
@@ -657,7 +740,11 @@
     var t = this.tags && this.tags[map];
     if (!t || !e || e.clientX == null) return;
     if (t.name !== name) { t.name = name; t.pill.textContent = name; t.m.w = 0; }
-    t.n.classList.add('mm-road--gold');   /* hover label is always the gold Figma pill */
+    /* hover label: the gold Figma pill; a Metro line uses its own colour (v8.9: same concept as its dashes) */
+    var tagRgb = o && o.rd && o.rd.tagRgb;
+    t.n.classList.toggle('mm-road--gold', !tagRgb);
+    if (tagRgb) t.n.style.setProperty('--c', tagRgb); else t.n.style.removeProperty('--c');
+    t.n.classList.toggle('is-metro', !!tagRgb);
     var pt = this.roadNearest(map, o, e), cam = this.layers[map].cam;
     /* near the top of the frame the label hangs below the road instead of above it */
     var down = pt[1] * cam.s + cam.ty < 110;
@@ -678,10 +765,13 @@
     var self = this, o = this.ovRoads && this.ovRoads[id];
     if (!o) return;
     if (on && this.ovHover && this.ovHover !== id) this.hoverOvRoad(this.ovHover, false);
+    if (on && this.ovAreaHover) this.hoverOvArea(this.ovAreaHover, false);
+    if (on) this.ovDim.setAttribute('d', this.ovDimRect);
     this.ovHover = on ? id : null;
     Object.keys(this.ovRoads).forEach(function (k) {
       var r = self.ovRoads[k];
       G.to(r.comet.g, { opacity: on && k !== id ? 0.15 : 1, duration: 0.4, overwrite: 'auto' });
+      if (r.base) G.to(r.base, { opacity: on && k !== id ? 0.18 : 1, duration: 0.4, overwrite: 'auto' });
     });
     o.g.classList.toggle('is-hover', on);
     G.to(this.ovDim, { opacity: on ? 1 : 0, duration: 0.5, ease: 'power2.out', overwrite: true });
@@ -1034,6 +1124,12 @@
     var self = this, L = this.layers.master3d, c = L.canvas, W = MAPS.master3d.w, H = MAPS.master3d.h;
     /* Figma "Map" 49:7667 — depth: a muted, darker, top-blurred base image with the SALA core
        shown on top in full colour and full sharpness through a soft (85px-blurred) focus mask */
+    if (CONFIG.master3dBaked) {
+      /* v9.6: the client's graded render (same framing as map-3d.jpg, registered at 1.1596x, 0.4 px median error).
+         Its depth, vignette and colour are baked in, so it is shown as is: no extra grade, blur, dim or focus layers. */
+      var baked = el('img', 'mm-base mm-3d-baked'); self.lazy(baked, 'master3d', IMG + CONFIG.master3dBaked); baked.alt = 'Phối cảnh tổng thể Khu đô thị Sala'; baked.draggable = false;
+      c.appendChild(baked);
+    } else {
     var img = el('img', 'mm-base mm-3d-base'); self.lazy(img, 'master3d', IMG + 'map-3d.webp'); img.alt = 'Phối cảnh tổng thể Khu đô thị Sala'; img.draggable = false;
     c.appendChild(img);
     /* progressive layer blur ~5.7px at the top fading out by 56% height (depth of field) */
@@ -1043,6 +1139,7 @@
     var focus = el('img', 'mm-base mm-3d-focus'); self.lazy(focus, 'master3d', IMG + 'map-3d.webp'); focus.alt = ''; focus.draggable = false;
     c.appendChild(focus);
     c.appendChild(el('div', 'mm-softlight'));
+    }
 
     /* ---- one SVG in map space: spotlight, project zones, roads ---- */
     var svg = this.mSvg = svgEl('svg', { 'class': 'mm-msvg', width: W, height: H, viewBox: '0 0 ' + W + ' ' + H });
@@ -1110,8 +1207,8 @@
       stops.forEach(function (st) { lg.appendChild(svgEl('stop', { offset: st[0], 'stop-color': st[1], 'stop-opacity': st[2] == null ? 1 : st[2] })); });
       zDefs.appendChild(lg);
     }
-    D.projects.forEach(function (p) {
-      var zs = (D.projectZones || {})[p.id];
+    D.projects.concat(D.landmarks || []).forEach(function (p) {
+      var zs = (D.projectZones || {})[p.zone || p.id];
       if (!zs || !zs.length) return;
       var g = svgEl('g', { 'class': 'mm-zone-g' }), fx = [], ds = [];
       /* Figma 57:7825: the building itself, cut from the dusk render (lights on) by its outline */
@@ -1123,7 +1220,10 @@
       g.appendChild(lit); fx.push(lit);
       zs.forEach(function (z, i) {
         var fid = 'mmZF_' + p.id + '_' + i, sid = 'mmZS_' + p.id + '_' + i;
-        grad(fid, z.fill, z.fillStops); grad(sid, z.stroke, z.strokeStops);
+        /* v10.9: a project not yet on sale (Chưa mở bán) lights up in neutral greys instead of Sala gold */
+        var neutral = p.status === 'closed';
+        grad(fid, z.fill, neutral ? [[0, '#BDBAB4'], [1, '#55524D']] : z.fillStops);
+        grad(sid, z.stroke, neutral ? [[0, '#F2F0EC', 1], [1, '#9A968E', 0]] : z.strokeStops);
         var fill = svgEl('path', { 'class': 'mm-zone-fill', d: z.d, fill: 'url(#' + fid + ')' });
         var line = svgEl('path', { 'class': 'mm-zone-line', d: z.d, stroke: 'url(#' + sid + ')', 'stroke-width': Math.max(1, z.sw * 1.6).toFixed(2) });
         g.appendChild(fill); g.appendChild(line); fx.push(fill, line); ds.push(z.d);
@@ -1131,13 +1231,15 @@
       var d = ds.join(' ');
       gZones.appendChild(g);
       /* hover: a soft comet runs once around the outline (0% at head and tail) */
-      var trace = makeLight(svg, g, d, { grad: 'mmCometGradM', color: '#ffd98f', core: '#fff8ea', width: 1.8, glowWidth: 6, glowFilter: 'mmGlow', radius: 9, spacing: 3.5, profile: 'comet', head: 16, tail: 260, endFade: 6 });
+      var nt = p.status === 'closed';
+      if (nt) g.classList.add('is-neutral');
+      var trace = makeLight(svg, g, d, { grad: 'mmCometGradM', color: nt ? '#e8e6e2' : '#ffd98f', core: nt ? '#ffffff' : '#fff8ea', width: 1.8, glowWidth: 6, glowFilter: 'mmGlow', radius: 9, spacing: 3.5, profile: 'comet', head: 16, tail: 260, endFade: 6 });
       G.set(trace.g, { opacity: 0 });
       G.set(fx, { opacity: 0 });
       p._zone = { g: g, fx: fx, trace: trace, d: d, tr: '' };
       g.addEventListener('pointerenter', function () { self.hoverProject(p, true); });
       g.addEventListener('pointerleave', function () { self.hoverProject(p, false); });
-      g.addEventListener('click', function () { if (!self.suppress) self.select('project', p); });
+      g.addEventListener('click', function () { if (!self.suppress && !p.zone) self.select('project', p); });
     });
     c.appendChild(svg);
 
@@ -1171,6 +1273,8 @@
     D.projects.forEach(function (p) {
       var b = el('button', 'mm-proj mm-proj--' + p.side);
       b.type = 'button';
+      b._pole = p.pole || 1;   /* v9.0: some Figma flags have a shorter pole (70 / 120 px) */
+      b.setAttribute('data-status', p.status || 'closed');   /* v10.6: status dot before the name */
       b.setAttribute('aria-label', p.name);
       b.innerHTML = '<span class="mm-proj__line"></span><span class="mm-proj__tag">' + esc(p.name) + '</span>';
       b.addEventListener('pointerenter', function (e) { if (e.pointerType !== 'touch') self.hoverProject(p, true); });
@@ -1181,15 +1285,24 @@
       p._el = b;
       self.addMarker('master3d', b, p.x, p.y, 'proj-' + p.side);
     });
+    /* landmarks (v9.4): the gold Figma road tag, always shown; hover lights its outline */
+    (D.landmarks || []).forEach(function (p) {
+      var n = el('div', 'mm-road mm-road--up mm-road--gold mm-landmark', '<span class="mm-road__pill"></span><span class="mm-road__line"></span><span class="mm-road__dot"></span>');
+      n.querySelector('.mm-road__pill').textContent = p.name;
+      n._len = 16;   /* v10.5: shorter leader so the tag sits lower (stays in frame when the top is cropped) */
+      n.addEventListener('pointerenter', function (e) { if (e.pointerType !== 'touch') self.hoverProject(p, true); });
+      n.addEventListener('pointerleave', function (e) { if (e.pointerType !== 'touch') self.hoverProject(p, false); });
+      n.addEventListener('click', function () { if (!self.suppress) self.hoverProject(p, !(self.hovered === p)); });
+      p._el = n;
+      self.addMarker('master3d', n, p.x, p.y, 'road-up');
+    });
   };
 
   P.buildAmenity = function () {
     var self = this, c = this.layers.amenity.canvas;
-    var img = el('img', 'mm-base mm-topview'); self.lazy(img, 'amenity', IMG + 'map-topview.webp'); img.alt = 'Bản đồ tiện ích Khu đô thị Sala'; img.draggable = false;
+    /* v9.7 (Figma 28418:14159): the same urban 3D render as Khu đô thị, shown as is; no dim on hover */
+    var img = el('img', 'mm-base mm-3d-baked'); self.lazy(img, 'amenity', IMG + (CONFIG.master3dBaked || 'map-3d.webp')); img.alt = 'Bản đồ tiện ích Khu đô thị Sala'; img.draggable = false;
     c.appendChild(img);
-    /* the flat 30% black over the whole top-view is gone: only the screen-fixed bottom fade remains (.mm-bottomfade) */
-    c.appendChild(el('div', 'mm-softlight'));
-    c.appendChild(el('div', 'mm-am-dim'));   /* dims the map while an amenity node is hovered / selected */
     D.amenities.forEach(function (a) {
       var b = el('button', 'mm-pin' + (a.featured ? ' mm-pin--featured' : ''));
       b.type = 'button';
@@ -1198,9 +1311,61 @@
       b.innerHTML = '<span class="mm-pin__pulse"></span>' + icon(I.amenity[a.icon]) +
         '<span class="mm-pin__tip" aria-hidden="true">' + esc(a.name) + '</span>';
       b.addEventListener('click', function () { if (!self.suppress) self.select('amenity', a); });
+      /* v10.4: pins that share a name are one place (Tháp Đôi Văn Phòng A+, Chuỗi TTTM Đa Chức Năng):
+         hovering any of them lights all of them in pink; only the hovered one shows the name tag */
+      function twins(on) { D.amenities.forEach(function (o) { if (o !== a && o.name === a.name && o._el) o._el.classList.toggle('is-twin', on); }); }
+      b.addEventListener('pointerenter', function () { twins(true); });
+      b.addEventListener('pointerleave', function () { twins(false); });
+      b.addEventListener('focus', function () { twins(true); });
+      b.addEventListener('blur', function () { twins(false); });
       a._el = b;
       self.addMarker('amenity', b, a.x, a.y);
     });
+    this.buildAmenityLines(c);
+  };
+
+  /* v10.1: lines on the amenity map (Tuyến Buggy), with the same light + hover as the urban map roads */
+  P.buildAmenityLines = function (c) {
+    var self = this, R = D.amenityLines || [], W = MAPS.amenity.w, H = MAPS.amenity.h;
+    if (!R.length) return;
+    var svg = svgEl('svg', { 'class': 'mm-msvg mm-alines', width: W, height: H, viewBox: '0 0 ' + W + ' ' + H });
+    svg.__host = { app: this, map: 'amenity' };
+    svg.innerHTML = '<defs><filter id="mmAGlow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="5"/></filter>' +
+      '<filter id="mmASoft" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="3"/></filter>' + cometGradDefs('mmCometGradA') + '</defs>';
+    this.alDim = svgEl('rect', { 'class': 'mm-ov-dim', width: W, height: H });
+    svg.appendChild(this.alDim); G.set(this.alDim, { opacity: 0 });
+    this.alines = {};
+    R.forEach(function (ln) {
+      var g = svgEl('g', { 'class': 'mm-road-g' });
+      var fx = roadLights(svg, g, ln.d, 1, 'mmCometGradA', 'mmAGlow', 'mmASoft', ln.dur || 6, 1);
+      var hit = svgEl('path', { 'class': 'mm-road-hit', d: ln.d });
+      g.appendChild(hit); svg.appendChild(g);
+      var o = self.alines[ln.id] = { ln: ln, g: g, hl: fx.hl, comet: fx.comet, hit: hit, pts: null };
+      function tag(e) { if (self.alHover === ln.id) self.showRoadTag('amenity', o, ln.name, false, e); }
+      hit.addEventListener('pointerenter', function (e) { if (e.pointerType !== 'touch') { self.hoverALine(ln.id, true); tag(e); } });
+      hit.addEventListener('pointermove', function (e) { if (e.pointerType !== 'touch') tag(e); });
+      hit.addEventListener('pointerleave', function (e) { if (e.pointerType !== 'touch') self.hoverALine(ln.id, false); });
+      hit.addEventListener('click', function (e) {
+        if (self.suppress) return;
+        if (self.alHover === ln.id && e.pointerType === 'touch') return self.hoverALine(ln.id, false);
+        self.hoverALine(ln.id, true); tag(e);
+      });
+    });
+    c.appendChild(svg);
+    this.makeRoadTag('amenity');
+  };
+  P.hoverALine = function (id, on) {
+    if (on && (this.active !== 'amenity' || this.busy)) return;
+    var self = this, r = this.alines && this.alines[id];
+    if (!r) return;
+    if (on && this.alHover && this.alHover !== id) this.hoverALine(this.alHover, false);
+    if (!on && this.alHover !== id) return;
+    this.alHover = on ? id : null;
+    Object.keys(this.alines).forEach(function (k) { G.to(self.alines[k].comet.g, { opacity: on && k !== id ? 0.15 : 1, duration: 0.4, overwrite: 'auto' }); });
+    r.g.classList.toggle('is-hover', on);
+    G.to(this.alDim, { opacity: on ? 1 : 0, duration: 0.5, ease: 'power2.out', overwrite: true });
+    if (on) r.hl.show(1.1);
+    else { r.hl.hide(0.4); this.hideRoadTag('amenity'); }
   };
 
   /* ---------- layout & camera ---------- */
@@ -1223,7 +1388,7 @@
     var ls = this.lineScale = (this.layout === 'section-desktop' || this.layout === 'page-desktop') ? 1 : 0.72;
     var self = this;
     Object.keys(this.markers).forEach(function (k2) { self.markers[k2].forEach(function (m) { m.w = 0; }); });
-    this.root.querySelectorAll('.mm-proj').forEach(function (n) { n.style.height = Math.round(120 * ls) + 'px'; });
+    this.root.querySelectorAll('.mm-proj').forEach(function (n) { n.style.height = Math.round(PROJ_POLE * ls * (n._pole || 1)) + 'px'; });   /* v8.7: 120 → 84 */
     this.root.querySelectorAll('.mm-road').forEach(function (n) {
       var line = n.querySelector('.mm-road__line'), len = Math.round(n._len * ls);
       if (n.classList.contains('mm-road--left') || n.classList.contains('mm-road--right')) line.style.width = len + 'px';
@@ -1262,7 +1427,9 @@
       var b = MAPS[map].bounds, w = this.fw - (this.padRight || 0);
       s = Math.max(w / (b[2] - b[0]), this.fh / (b[3] - b[1]));
       this.layers[map].sDefault = s;
-      return this.clampCam(map, { s: s, tx: w / 2 - (b[0] + b[2]) / 2 * s, ty: this.fh / 2 - (b[1] + b[3]) / 2 * s });
+      /* v10.5: on the 3D maps the opening view keeps the bottom edge (marina) in frame; any crop comes off the top */
+      var ty = (map === 'master3d' || map === 'amenity') ? this.fh - b[3] * s : this.fh / 2 - (b[1] + b[3]) / 2 * s;
+      return this.clampCam(map, { s: s, tx: w / 2 - (b[0] + b[2]) / 2 * s, ty: ty });
     }
     this.layers[map].sDefault = s;
     return this.clampCam(map, { s: s, tx: this.fw / 2 - c[0] * s, ty: this.fh / 2 - c[1] * s });
@@ -1836,6 +2003,7 @@
     this.loadMap(CONFIG.mapOf[target] || target, true);   /* start fetching right away if it is still waiting */
     if (this.ovHover) this.hoverOvRoad(this.ovHover, false);
     if (this.rdHover) this.hoverRoad(this.rdHover, false);
+    if (this.alHover) this.hoverALine(this.alHover, false);
     this.busy = true;
     this.deselect(true);
     var self = this, map = CONFIG.mapOf[target], prev = this.active;
@@ -1873,6 +2041,7 @@
     var self = this, from = this.active;
     if (this.ovHover) this.hoverOvRoad(this.ovHover, false);
     if (this.rdHover) this.hoverRoad(this.rdHover, false);
+    if (this.alHover) this.hoverALine(this.alHover, false);
     this.busy = true;
     this.deselect(true);
     this.view = target;
@@ -1910,6 +2079,7 @@
   P.toOverview = async function () {
     var self = this;
     if (this.rdHover) this.hoverRoad(this.rdHover, false);
+    if (this.alHover) this.hoverALine(this.alHover, false);
     this.busy = true;
     this.deselect(true);
     this.view = 'overview';
@@ -1937,6 +2107,7 @@
      held behind the clouds (with the spinning logo) until its image arrives when it isn't */
   P.switchTab = async function (target) {
     if (this.rdHover) this.hoverRoad(this.rdHover, false);
+    if (this.alHover) this.hoverALine(this.alHover, false);
     this.busy = true;
     this.deselect(true);
     var self = this, map = target === 'amenity' ? 'amenity' : 'master3d', prev = this.active;
@@ -2032,7 +2203,7 @@
   /* ---------- selection & panel ---------- */
   P.select = function (kind, item) {
     if (this.busy) return;
-    if (!item.data) return;   /* only items with content from the design open the panel */
+    if (!item.data && !(kind === 'project' && item.thumb)) return;   /* v9.9: a project without content opens a short panel */
     if (this.selection && this.selection.item === item) return;
     this.clearSelectionMarks();
     this.selection = { kind: kind, item: item };
@@ -2102,9 +2273,13 @@
   P.renderPanel = function (kind, item) {
     var d = item.data, P2 = this.panel;
     P2.setAttribute('aria-label', d ? d.title : item.name);
-    P2.querySelector('.mm-panel__kind').textContent = kind === 'project' ? 'Dự án' : 'Tiện ích';
+    /* v9.8 (Figma 28422:16102 / 16114 / 16126): a project's panel header shows its sales status in the status colour */
+    var kindEl = P2.querySelector('.mm-panel__kind'), st = kind === 'project' ? (SALE_STATUS[item.status] || SALE_STATUS.closed) : null;
+    kindEl.textContent = st ? st.label : 'Tiện ích';
+    kindEl.setAttribute('data-status', st ? (item.status || 'closed') : '');
     var body = P2.querySelector('.mm-panel__body'), foot = P2.querySelector('.mm-panel__foot');
     var title = d ? d.title : item.name;
+    P2.classList.toggle('is-brief', !d);   /* v9.9: short panel (no content yet): the phone sheet hugs its content */
     var html = '<h3 class="mm-panel__title">' + esc(title) + '</h3>';
     if (d) {
       /* one rule for every popover (feedback 02/11): label on the left, value on the right; stats are [label, value] */
@@ -2126,12 +2301,27 @@
         '<div class="mm-gal__track">' + thumbs + '</div></div>' +
         cta.replace('class="mm-cta"', 'class="mm-cta mm-cta-inline"') + '</div>';
       foot.innerHTML = cta; foot.style.display = '';
+    } else if (kind === 'project' && item.thumb) {
+      /* v9.9 (feedback 05/11): no content yet → status, name, thumbnail and "Đăng kí nhận thông tin" only */
+      var reg = '<a class="mm-cta" href="' + (item.registerHref || '#') + '">Đăng kí nhận thông tin' + icon(I.arrowRight) + '</a>';
+      html = '<div class="mm-col mm-col--a">' + html +
+        '<div class="mm-panel__media mm-skel"><img src="' + item.thumb + '" alt="' + esc(title) + '"></div></div>' +
+        '<div class="mm-col mm-col--b">' + reg.replace('class="mm-cta"', 'class="mm-cta mm-cta-inline"') + '</div>';
+      foot.innerHTML = reg; foot.style.display = '';
     } else {
       html += '<p class="mm-panel__empty">Thông tin chi tiết về ' + esc(item.name) + ' đang được cập nhật.</p>';
       foot.innerHTML = ''; foot.style.display = 'none';
     }
     body.innerHTML = html;
-    if (!d) return;
+    if (!d) {
+      body.querySelectorAll('.mm-skel img').forEach(function (im) {
+        var box = im.parentNode;
+        function done() { box.classList.add('is-loaded'); }
+        if (im.complete && im.naturalWidth) done();
+        else { im.addEventListener('load', done, { once: true }); im.addEventListener('error', done, { once: true }); }
+      });
+      return;
+    }
     /* skeleton (feedback 02/11): a shimmering placeholder in the image frames until each picture has loaded,
        instead of an empty grey box; the picture then fades in */
     body.querySelectorAll('.mm-skel img').forEach(function (im) {

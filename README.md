@@ -340,3 +340,181 @@ Hover and select on the 3D map: the whole building is covered by its Figma gold 
   - The main image and gallery thumbnails sit in `.mm-skel` frames: a soft shimmer (Sala cream) until each picture has loaded.
   - The picture then fades in (`.is-loaded`). Already cached pictures show at once.
   - The shimmer stops under `prefers-reduced-motion`.
+
+## v8.4: updated overview map + interactive Metro routes
+
+- The Tổng quan view now uses the client-supplied 3402 × 2094 artwork (`assets/img/map-overview-v84.png`).
+  Its registered map-space width is unchanged, while the height follows the new crop, so the SALA zone, pin and road overlays stay aligned.
+- Metro 1 and Metro 2 have live dashed SVG routes (`overviewTransit` in `js/data.js`).
+  The dashes travel continuously and fade softly at both ends. They share the road interaction: hover or tap dims
+  the map, lights the selected alignment and shows its name.
+
+## v8.5: v8.4 overview map registered correctly (05/11)
+- **Problem in v8.4:** the new artwork was laid over the old one at the old width (1304.9 px) and only the height was changed.
+  The new export is a tighter crop at a different scale, so the SALA zone and pin sat down and to the right of the urban area,
+  and the road lights no longer ran along the printed roads.
+- **Fix:** the new artwork is registered on `map-overview-hd.webp` by matching 401 features the two maps share
+  (SIFT + RANSAC, median error 0.8 px, no rotation): new px × 1.1421 + (291.9, 160.4) = old-HD px.
+  - In map space the artwork now sits at (175.9, 386.8), 1237.8 × 761.9 (`.mm-ov-img--hd` and `MAPS.overview.bounds`).
+  - The zone, pin and roads keep their coordinates. The two Metro routes (they were traced on the misplaced image)
+    were moved with the same transform, so they still follow the printed Metro lines.
+- **Smaller file:** `map-overview-v84.webp` (q80, 189 KB) replaces the 1.09 MB PNG at runtime. The PNG stays as the source.
+
+## v8.6: Metro routes traced from the printed dashes (05/11)
+- **Feedback:** "đoạn đường metro 1 bị thiếu 1 đoạn dài, đoạn đường metro 2 bị lệch chút".
+  - Metro 1 only covered Landmark 81 → Xa lộ Hà Nội. The whole Bến Thành → Ba Son → Landmark 81 stretch was missing.
+  - Metro 2 was a hand trace and sat a few pixels off the printed line.
+- **Now:** both routes are traced from the artwork itself.
+  - Each printed dash is found by colour and size (dark-brown Metro 1 dashes, dark-green Metro 2 dashes) and kept only if it runs along the route, which drops bits of the bridge symbols.
+  - The dashes are joined in order and simplified (1.5 px tolerance), then mapped into map space with the v8.5 registration.
+  - Metro 1: Bến Thành → Ba Son → Landmark 81 → Xa lộ Hà Nội, to the top edge. Metro 2: Bến Thành → Nhà ga Thủ Thiêm.
+
+## v8.7: smaller project flags + split section header (05/11)
+- **Flags** (feedback "đề xuất nhỏ lại"), 3D map:
+
+  | | Before | Now |
+  | --- | --- | --- |
+  | Desktop tag | 14 px text, padding 8/12, 37 px tall | 12 px text, padding 5/10, 26 px tall |
+  | Phone tag | 12 px text, padding 6/10, 30 px tall | 11 px text, padding 4/8, 23 px tall |
+  | Pole | 2 px × 120 px (phones 86) | 1 px × 84 px (phones 60), `PROJ_POLE` in app.js |
+  | Tag border | 2 px | 1 px |
+
+  Road pills and bridge badges keep their size.
+- **Section header** (desktop and tablet, ≥ 768 px): the title sits on the left and the description on the right
+  (at most 560 px wide), both spanning the map frame's width with their bottoms aligned.
+  Each title line stays on one row and the description narrows instead. Phones keep the stacked, centred header.
+
+## v8.8: one size for every map label (05/11)
+- Feedback: road names and bridge nodes smaller too, "thống nhất là chữ 12px hết".
+- **Every label on the maps is now 12 px text, 26 px tall** (phones 24 px), with a 1 px border:
+  - project flags;
+  - the hover road name (3D map, gold pill), whose leader goes from 40 → 28 px;
+  - bridge badges and off-screen bridge nodes;
+  - the overview road chip;
+  - amenity pin tooltips.
+- Leader lines are 1 px, and dots are 6 px with a 1 px ring (were 8 px with a 2 px ring).
+
+## v8.9: each Metro line lights up in its own colour (05/11)
+- Feedback: the hover should use the same colour concept as the line's dashes, so Metro 2 lights up green.
+- `overviewTransit` items in data.js take `light: { color, core }` (the glow and its bright core) and `tagRgb` (the hover pill).
+  `roadLights()` uses that tint instead of the shared road gold.
+  - **Metro 2:** green glow (#8fc256, core #e6f6cf), green pill (78, 110, 44), like its dark-green dashes.
+  - **Metro 1:** copper glow (#d99a5e, core #fbe1c2), brown pill (118, 80, 56), like its brown dashes.
+  - Roads keep the gold light and the gold pill.
+
+## v9.0: projects updated from the new Figma (05/11)
+- Source: Figma "WEBSITE KHU ĐÔ THỊ SALA", frame 28407:14051. Label anchors, sides, pole lengths and building outlines were read straight from the file and converted to map space (Figma Map × 1648/1471; the Map sits at x −16 in the frame).
+- **The 10 projects now:** Sarene, Sadora, Saroma Villas, Sarimi, Sarica, Nhà phố thương mại, Saritown, Commercial Villas, Savila, Mansion.
+  - Renamed: Saroma Villa → Saroma Villas; Shop House → Nhà phố thương mại (Group 2147223721).
+  - New: Sarica (Vector 2406, which used to be half of Sarimi), Commercial Villas (2409), Mansion (2410).
+  - Removed: Sarina. Its outline 2402 is still in the Figma Map, but it has no label in this frame.
+- Commercial Villas and Mansion use the shorter Figma pole (70 / 120 px, `pole: 0.583` in data.js).
+- Only Sarene has popover content. The others have `data: null`, so clicking them opens nothing until content is added.
+
+## v9.1: Sarina back (05/11)
+- The designer added the Sarina label to Figma 28407:14051 (instance 28415:14127, 72 px pole → `pole: 0.6`). It lights outline 2402. The Saritown label moved left in the same frame and was updated.
+- 11 projects: Sarene, Sadora, Saroma Villas, Sarimi, Sarica, Nhà phố thương mại, Saritown, Sarina, Commercial Villas, Savila, Mansion.
+
+## v9.2: Cầu Ba Son (05/11)
+- On the 3D map, the inverted-Y cable-stayed bridge at the top right is now labelled "Cầu Ba Son" (was "Cầu Thủ Thiêm 2"), per Hyun's comment on the test page.
+
+## v9.3: hover on Trung tâm hành chính (05/11)
+- On the Tổng quan map, hovering the gold block "Trung tâm hành chính - tài chính mới TP.HCM" (tap on phones):
+  - The rest of the map dims. The block itself is cut out of the dim (`.mm-ov-dim` is now an even-odd path), so it stays at full brightness with a light wash.
+  - The block gets a 1 px light rim, and a comet runs once around it, the same as a 3D building.
+  - The gold name pill sits at the block's top point.
+- The outline was traced from the gold block printed on the v8.4 artwork. It lives in `overviewAreas` in data.js, so more named areas can be added the same way.
+- Fix: the `.mm-ovroads path { fill: none }` rule had been overriding the dim's fill. The dim now has its own higher-specificity rule.
+
+## v9.4: Trung tâm Hành chính on the 3D map (05/11)
+- From Figma 28407:14051: the "Web/Map/Road Tag" "Trung tâm Hành chính TP.HCM" and the outline Vector 2412 (the civic block behind the lake).
+- `D.landmarks` in data.js: an always-visible gold road tag (pill + leader + dot, 12 px, leader 28 px).
+  - Hovering the tag or the block lights the block the way a project does: the rest of the map dims, the dusk render shows inside the outline, and a comet runs around it.
+  - On touch, tap toggles it.
+  - No popover, since there is no content.
+- The outline sits in `projectZones['tthc-3d']`, with the Figma stroke (gold fading at both ends).
+- Vector 2411 (a single gold line across the map in the same frame) is not used. It is not tied to any label.
+
+## v9.5 (05/11)
+- The Trung tâm Hành chính tag has no dot: just the pill and the leader, as in the Figma road tag.
+
+## v9.6: new urban 3D background (05/11)
+- The Khu đô thị map uses the client's graded render: `assets/img/map-3d-v95.webp` (2588 × 1444, q82, 557 KB). The source PNG is in `assets/raw/map-3d-v95.png`.
+- It has the same framing as map-3d.jpg (SIFT: 8,183 matches, scale 1.1596, no rotation, median error 0.4 px). Every flag, outline, road light and bridge node keeps its coordinates.
+- Its depth, vignette and colour are baked in, so it is shown as is. The old CSS grade, top blur, 20% dim, focus mask and soft-light layers are skipped.
+  `CONFIG.master3dBaked` in app.js names the file. Set it to null to go back to map-3d.webp with the CSS grade.
+- Lit buildings on hover still come from map-3d-dusk.webp, clipped by each outline.
+
+## v9.7: Tiện ích on the 3D map (05/11)
+- From Figma 28418:14159 (pins) and 28418:14922 (hover). The Tiện ích tab now uses the same urban 3D render as Khu đô thị (`MAPS.amenity` = 1648 × 920, the same cameras). The top-view map is no longer loaded.
+- **20 pins** at their Figma spots. The icon follows the Web/Icon/Amenity type: vui chơi, giỏ hàng, tòa nhà (4), tòa nhà 2, y tế, du thuyền, kim cương, mua sắm (3), khách sạn, thư viện, âm nhạc & rượu (2), giáo dục, công viên.
+  - **At rest:** 20 px, cream fill, 2 px Sala-pink ring, 12 px pink icon.
+  - **Hover / selected:** the pin stays pink and its name rises in a pink road tag above it: 12 px text, rgba(200, 34, 84, .5) pill with a 1 px border and 10 px blur, and a 1 px × 28 px leader fading towards the pin. Every other pin turns gold. The map does not dim.
+- **Names:** Figma names only "Công viên văn hóa thiếu nhi" (the vui chơi pin, which keeps the Cung văn hóa popover). The other names are carried over by icon type from the earlier top-view map. The two Ga Metro pins are gone, since they are not in the new design.
+
+## v9.8: sales status in the project panel (05/11)
+- The project popover header no longer says "Dự án". It shows the project's sales status, as in Figma 28422:16102 / 16114 / 16126 (24 px):
+  - **Đang mở bán** (#2F806C): Sarene, Saroma Villas.
+  - **Sắp mở bán** (#5276B8): Sadora, Savila.
+  - **Chưa mở bán** (#C94B4B): every other project.
+- `status: 'open' | 'soon' | 'closed'` per project in data.js. Amenity popovers still say "Tiện ích".
+
+## v9.9: short popover for projects without content (05/11)
+- Clicking a project that has no content yet now opens the popover with four things only:
+  - its sales status;
+  - its name;
+  - a thumbnail;
+  - "Đăng kí nhận thông tin". It shows the "Tính năng đang được phát triển" notice until a real link is set in `registerHref`.
+- These popovers have no "Xem chi tiết dự án" button.
+- Thumbnails (`thumb` in data.js, `assets/img/projects/<id>.webp`, 960 × 540) are 16:9 crops of the 3D render around each outline. Swap in the client's renders when they arrive.
+- On phones the bottom sheet for a short popover is only as tall as its content (`.mm-panel.is-brief`).
+
+## v10.0: exact amenity names (05/11)
+- Names come from the 14 Figma labels (28423:16212 … 28422:15835), matched to the pins by icon type. Hyun picked the pins for the types that have more than one (05/11):
+  - Phức Hợp TMDV Thiso Sala (tòa nhà 2).
+  - Clubhouse Khu II (Saroma pin) and Clubhouse Khu III (lower pin).
+  - Chuỗi TTTM Chủ Đề Kết Hợp Showroom (pin near Sadora) and Chuỗi TTTM Đa Chức Năng (pin near Sarene).
+  - Khách Sạn Cao Cấp, Khách Sạn Siêu Sang.
+  - Tháp Đôi Văn Phòng A+ (all 4 tòa nhà pins).
+  - Bến Du Thuyền, Trường Quốc Tế Liên Cấp, Trường Song Ngữ Việt - Úc, Bệnh Viện Quốc Tế, Công Viên Sala, Công Viên Văn Hóa Thiếu Nhi.
+- The Công Viên Văn Hóa Thiếu Nhi popover title now uses the same name.
+- The 3 Mua sắm pins are also Chuỗi TTTM Đa Chức Năng (Hyun, 05/11). Every pin now has a Figma name.
+
+## v10.1: Tuyến Buggy on the amenity map (05/11)
+- Figma 28418:14159, Vector 2413. It lives in `D.amenityLines` and works like the urban map roads:
+  - **At rest:** only a soft comet runs along it now and then.
+  - **Hover (tap on phones):** the map dims, the whole line lights up (gold glow, fading to 0 at both ends) and "Tuyến Buggy" shows in the gold road tag at the pointer.
+- It is built by `buildAmenityLines()` / `hoverALine()` and is cleared on every tab change. More lines can be added to `amenityLines`.
+
+## v10.2 (05/11)
+- Amenity pins are bigger (Hyun: too small): 28 px with a 16 px icon (were 20 px / 12 px). The ring stays 2 px. The name tag and its 28 px leader are unchanged.
+
+## v10.3 (05/11)
+- On phones (section-mobile, page-landscape) amenity pins are 24 px with a 14 px icon. Desktop stays at 28 / 16 px.
+- On touch screens every amenity pin has an invisible 44 px tap area (`.mm-pin::before`). The visible size does not change.
+
+## v10.4 (05/11)
+- Pins that share a name are one place: the 4 Tháp Đôi Văn Phòng A+ pins, the 3 Chuỗi TTTM Đa Chức Năng pins (mua sắm) and the 2 Chuỗi TTTM Chủ Đề Kết Hợp Showroom pins (giỏ hàng; Hyun 05/11).
+  Hovering or focusing any of them lights all of them in pink (`.is-twin`). Only the hovered one shows the name tag, and the other pins turn gold as usual.
+
+## v10.5 (05/11)
+- On the 3D maps (Khu đô thị, Tiện ích), the opening view keeps the bottom edge in frame, so the marina (Bến Du Thuyền) always shows. When the frame is wider than the map, the crop now comes off the top (the section embed at 1360 × 680), not half from each end.
+- The Trung tâm Hành chính tag sits lower: its anchor is on the middle of the block (y 168, was 138.9) and its leader is 16 px (was 28), so it stays inside the frame.
+
+## v10.6 (05/11)
+- Every project flag has a status dot before its name: 8 px, 1 px beige ring (#E1CFA6), filled with the sales status colour.
+  Đang mở bán is #2F806C, Sắp mở bán #5276B8, Chưa mở bán #C94B4B (the same colours as the panel header).
+
+## v10.7 (05/11)
+- Status dot on the flags: 10 px with a 2 px beige ring (was 8 px with 1 px). The ring read too thin.
+
+## v10.8 (05/11)
+- The status dot on the project flags is removed (Hyun). The sales status still shows in the popover header.
+
+## v10.9 (05/11)
+- Hovering a project that is not on sale yet (Chưa mở bán) lights it in neutral greys instead of gold, so the state reads on the map itself:
+  - the fill is #BDBAB4 → #55524D at 60%;
+  - the rim is #F2F0EC → transparent;
+  - the comet is white;
+  - the lit building from the dusk render is in greyscale.
+- Đang mở bán and Sắp mở bán projects keep the gold hover.
