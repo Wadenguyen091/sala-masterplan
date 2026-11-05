@@ -541,3 +541,6 @@ Hover and select on the 3D map: the whole building is covered by its Figma gold 
 
 ## v11.4 (05/11)
 - The Trung tâm hành chính hover on the Tổng quan map is removed (`overviewAreas` is empty). The 3D urban map keeps its Trung tâm Hành chính tag and hover. The v9.3 code stays, so an area can come back by adding it to `overviewAreas`.
+
+## v11.5 (05/11)
+- No resting edge mist on the Tổng quan map (`AMBIENT.overview` density 0). The cloud transition between tabs is unchanged, and the 3D maps keep their light edge mist.

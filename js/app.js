@@ -366,7 +366,7 @@
   /* ambient cloud presets per map (edge-only drifting mist) */
   var AMBIENT = {
     /* idle edge mist: light, only drifting along the frame edges (feedback 02/11: don't hide the map) */
-    overview: { density: 0.44, edge: 1, alpha: 0.65 },
+    overview: { density: 0, edge: 1, alpha: 0 },   /* v11.5: no resting mist on the overview (Hyun) */
     plan2d: { density: 0.4, edge: 1, alpha: 0.6 },
     master3d: { density: 0.46, edge: 1, alpha: 0.7 },
     amenity: { density: 0.42, edge: 1, alpha: 0.65 }
